@@ -1,0 +1,17 @@
+# Environments
+.env
+.venv
+venv/
+__pycache__/
+
+# Config
+config/api_keys.py
+
+# Data & Logs
+data/
+logs/
+*.log
+
+# IDE settings
+.idea/
+.vscode/
