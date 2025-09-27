@@ -161,7 +161,7 @@ async def handle_update(exchange, message):
         await check_for_arbitrage(pair)
 
     except (KeyError, IndexError, TypeError):
-        log.debug(f"Malformed message from {exchange}: {message}")
+        log.warning(f"Malformed message from {exchange}: {message}")
 
 async def check_for_arbitrage(pair):
     latest_prices = price_manager.get_prices(pair)
@@ -191,8 +191,14 @@ async def check_for_arbitrage(pair):
     )
 
     if opportunity:
-        opportunity['buy_exchange'] = 'OKX' if opportunity['buy_exchange'] == 'A' else 'Bybit'
-        opportunity['sell_exchange'] = 'Bybit' if opportunity['sell_exchange'] == 'A' else 'OKX'
+        # Correctly map generic exchanges back to specific names
+        if opportunity['buy_exchange'] == 'A':
+            opportunity['buy_exchange'] = 'OKX'
+            opportunity['sell_exchange'] = 'Bybit'
+        else:
+            opportunity['buy_exchange'] = 'Bybit'
+            opportunity['sell_exchange'] = 'OKX'
+
         opportunity['pair'] = pair
 
         current_profit_threshold = MIN_PROFIT_THRESHOLD
