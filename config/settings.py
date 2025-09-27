@@ -1,10 +1,7 @@
-# config/settings.py
-
 import os
 
+# --- API Key Configuration ---
 # It is strongly recommended to use environment variables
-# instead of hardcoding keys here.
-
 API_KEYS = {
     'okx': {
         'api_key': os.getenv('OKX_API_KEY', 'YOUR_OKX_API_KEY'),
@@ -17,37 +14,37 @@ API_KEYS = {
     }
 }
 
-# Trading pairs for arbitrage
-TRADING_PAIRS = ['SOL/USDT', 'MATIC/USDT', 'DOGE/USDT', 'TON/USDT', 'TAC/USDT']
+# --- Triangular Arbitrage Strategy Settings ---
 
-# Arbitrage settings
-MIN_PROFIT_THRESHOLD = 0.0005  # Minimum profit percentage (e.g., 0.05%) to trigger a trade
-TRADE_SIZE_USDT = 100.0 # The amount in USDT to use for each trade calculation
+# Define the sets of three pairs that form a triangle.
+# The bot will look for opportunities within each of these sets on each exchange.
+TRIANGULAR_SETS = [
+    # Classic BTC-ETH-USDT Triangle
+    ('BTC/USDT', 'ETH/BTC', 'ETH/USDT'),
+    # Add other potential triangles here, for example:
+    # ('LTC/USDT', 'LTC/BTC', 'BTC/USDT'),
+    # ('XRP/USDT', 'XRP/BTC', 'BTC/USDT'),
+]
 
-# --- Market Maker Settings ---
-MM_SPREAD_PERCENTAGE = 0.08 # Target spread percentage (e.g., 0.08%) to capture
+# Automatically create a list of all unique pairs to subscribe to
+ALL_PAIRS = list(set(pair for triangle in TRIANGULAR_SETS for pair in triangle))
 
-# Exchange Fees (Taker fees are typically used for market orders in arbitrage)
+# The starting amount in the base currency (e.g., USDT) for each arbitrage attempt.
+# This is a fixed size for simplicity.
+TRADE_AMOUNT_BASE_CURRENCY = 100.0
+
+# Minimum profit percentage to log the opportunity. 
+# Set to 0.0 to log any trade that breaks even or is profitable.
+MIN_PROFIT_THRESHOLD = 0.0
+
+
+# --- Exchange Fee Configuration ---
+# Taker fees are used as we assume we are taking liquidity from the book.
 TRADING_FEES = {
     'okx': {
         'taker_fee': 0.001,  # 0.1%
-        'maker_fee': 0.0008  # 0.08%
     },
     'bybit': {
         'taker_fee': 0.001,  # 0.1%
-        'maker_fee': 0.001   # 0.1%
     }
 }
-
-# Dynamic Threshold Settings
-DYNAMIC_THRESHOLD_ENABLED = True
-VOLATILITY_LOOKBACK_PERIOD = 60 # seconds
-VOLATILITY_MULTIPLIER = 2.0 # Multiplier for volatility to add to min profit threshold
-
-# Rebalancing Settings (for simulation)
-REBALANCE_THRESHOLD_PERCENTAGE = 0.20 # If an asset balance deviates by more than 20% from ideal, trigger rebalance
-REBALANCE_AMOUNT_PERCENTAGE = 0.50 # Move 50% of the excess amount during rebalance
-
-# Data Staleness Settings
-MAX_DATA_STALENESS_SECONDS = 0.5 # Maximum time difference between two order books to be considered valid
-
