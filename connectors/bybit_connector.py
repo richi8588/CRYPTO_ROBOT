@@ -1,24 +1,54 @@
-# connectors/bybit_connector.py
 
 import asyncio
+import time
 import json
 import websockets
+from pybit.unified_trading import HTTP
+
+from config.settings import API_KEYS
+from utils.logger import log
 
 class BybitConnector:
-    def __init__(self):
-        self._url = "wss://stream.bybit.com/v5/public/spot"
-        print("Initializing Bybit Native WebSocket Connector...")
+    def __init__(self, testnet=False):
+        log.info("Initializing Bybit WebSocket Connector...")
+        self._url = "wss://stream-testnet.bybit.com/v5/public/spot" if testnet else "wss://stream.bybit.com/v5/public/spot"
+        
+        self.session = HTTP(
+            testnet=testnet,
+            api_key=API_KEYS['bybit']['api_key'],
+            api_secret=API_KEYS['bybit']['secret_key'],
+        )
 
-    async def start(self, pairs: list, callback):
+    def get_balance(self, coin: str):
+        """Fetches the balance for a specific coin from the UNIFIED account."""
+        try:
+            result = self.session.get_wallet_balance(
+                accountType="UNIFIED",
+                coin=coin
+            )
+            if result and result.get('retCode') == 0:
+                balance_list = result['result']['list']
+                if not balance_list or not balance_list[0]['coin']:
+                    return 0.0
+                
+                balance_info = balance_list[0]['coin'][0]
+                wallet_balance = balance_info['walletBalance']
+                return float(wallet_balance) if wallet_balance else 0.0
+            else:
+                log.error(f"Error fetching Bybit balance: {result.get('retMsg')}")
+                return None
+        except Exception as e:
+            log.error(f"An exception occurred while fetching Bybit balance: {e}")
+            return None
+
+    async def start_public_stream(self, pairs: list, callback):
         """Connects to Bybit, subscribes to pairs, and calls callback with messages."""
-        print("Bybit Connector connecting...")
+        log.info("Bybit Connector connecting to public stream...")
         while True: # Auto-reconnection loop
             try:
                 async with websockets.connect(self._url) as ws:
-                    # Bybit expects symbols without '/', e.g., 'BTCUSDT'
                     formatted_pairs = [p.replace('/', '') for p in pairs]
-                    # Topic format: orderbook.1.{symbol}
-                    topics = [f"orderbook.1.{pair}" for pair in formatted_pairs]
+                    topics = [f"orderbook.50.{pair}" for pair in formatted_pairs]
                     
                     subscribe_message = {
                         "op": "subscribe",
@@ -26,21 +56,19 @@ class BybitConnector:
                     }
                     await ws.send(json.dumps(subscribe_message))
 
-                    print(f"Subscribed to Bybit order book for: {', '.join(pairs)}")
+                    log.info(f"Subscribed to Bybit order book for: {', '.join(pairs)}")
 
                     async for message in ws:
                         data = json.loads(message)
-                        # Ping/pong to keep connection alive
                         if "op" in data and data["op"] == "ping":
                             await ws.send(json.dumps({"op": "pong", "req_id": data["req_id"]}))
                             continue
                         
-                        # Pass topic and data to the callback
                         if "topic" in data and "data" in data:
                             await callback('bybit', data)
             except websockets.exceptions.ConnectionClosed as e:
-                print(f"Bybit connection closed: {e}. Reconnecting in 5 seconds...")
+                log.warning(f"Bybit connection closed: {e}. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
             except Exception as e:
-                print(f"An unexpected error occurred with Bybit connector: {e}. Reconnecting in 10 seconds...")
+                log.error(f"An unexpected error occurred with Bybit connector: {e}. Reconnecting in 10 seconds...")
                 await asyncio.sleep(10)

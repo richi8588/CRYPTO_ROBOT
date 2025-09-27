@@ -1,17 +1,19 @@
 # config/settings.py
 
+import os
+
 # It is strongly recommended to use environment variables
 # instead of hardcoding keys here.
 
 API_KEYS = {
     'okx': {
-        'api_key': 'YOUR_OKX_API_KEY',
-        'secret_key': 'YOUR_OKX_SECRET_KEY',
-        'passphrase': 'YOUR_OKX_PASSPHRASE',
+        'api_key': os.getenv('OKX_API_KEY', 'YOUR_OKX_API_KEY'),
+        'secret_key': os.getenv('OKX_SECRET_KEY', 'YOUR_OKX_SECRET_KEY'),
+        'passphrase': os.getenv('OKX_PASSPHRASE', 'YOUR_OKX_PASSPHRASE'),
     },
     'bybit': {
-        'api_key': 'YOUR_BYBIT_API_KEY',
-        'secret_key': 'YOUR_BYBIT_SECRET_KEY',
+        'api_key': os.getenv('BYBIT_API_KEY', 'YOUR_BYBIT_API_KEY'),
+        'secret_key': os.getenv('BYBIT_API_SECRET', 'YOUR_BYBIT_API_SECRET'),
     }
 }
 
@@ -20,6 +22,10 @@ TRADING_PAIRS = ['SOL/USDT', 'MATIC/USDT', 'DOGE/USDT', 'TON/USDT', 'TAC/USDT']
 
 # Arbitrage settings
 MIN_PROFIT_THRESHOLD = 0.001  # Minimum profit percentage (e.g., 0.1%) to trigger a trade
+TRADE_SIZE_USDT = 500.0 # The amount in USDT to use for each trade calculation
+
+# --- Market Maker Settings ---
+MM_SPREAD_PERCENTAGE = 0.08 # Target spread percentage (e.g., 0.08%) to capture
 
 # Exchange Fees (Taker fees are typically used for market orders in arbitrage)
 TRADING_FEES = {
@@ -32,3 +38,13 @@ TRADING_FEES = {
         'maker_fee': 0.001   # 0.1%
     }
 }
+
+# Dynamic Threshold Settings
+DYNAMIC_THRESHOLD_ENABLED = True
+VOLATILITY_LOOKBACK_PERIOD = 60 # seconds
+VOLATILITY_MULTIPLIER = 2.0 # Multiplier for volatility to add to min profit threshold
+
+# Rebalancing Settings (for simulation)
+REBALANCE_THRESHOLD_PERCENTAGE = 0.20 # If an asset balance deviates by more than 20% from ideal, trigger rebalance
+REBALANCE_AMOUNT_PERCENTAGE = 0.50 # Move 50% of the excess amount during rebalance
+
