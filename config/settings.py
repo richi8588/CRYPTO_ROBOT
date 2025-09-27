@@ -21,8 +21,8 @@ API_KEYS = {
 TRADING_PAIRS = ['SOL/USDT', 'MATIC/USDT', 'DOGE/USDT', 'TON/USDT', 'TAC/USDT']
 
 # Arbitrage settings
-MIN_PROFIT_THRESHOLD = 0.001  # Minimum profit percentage (e.g., 0.1%) to trigger a trade
-TRADE_SIZE_USDT = 500.0 # The amount in USDT to use for each trade calculation
+MIN_PROFIT_THRESHOLD = 0.0005  # Minimum profit percentage (e.g., 0.05%) to trigger a trade
+TRADE_SIZE_USDT = 100.0 # The amount in USDT to use for each trade calculation
 
 # --- Market Maker Settings ---
 MM_SPREAD_PERCENTAGE = 0.08 # Target spread percentage (e.g., 0.08%) to capture
