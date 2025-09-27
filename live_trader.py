@@ -1,38 +1,33 @@
-
 import asyncio
 import time
-from datetime import datetime
-from collections import defaultdict, deque
 import logging
-import numpy as np
 
 from connectors.bybit_connector import BybitConnector
 from connectors.okx_connector import OKXConnector
-from config.settings import (
-    TRADING_PAIRS, TRADING_FEES, MIN_PROFIT_THRESHOLD, TRADE_SIZE_USDT,
-    DYNAMIC_THRESHOLD_ENABLED, VOLATILITY_LOOKBACK_PERIOD, VOLATILITY_MULTIPLIER,
-    REBALANCE_THRESHOLD_PERCENTAGE, REBALANCE_AMOUNT_PERCENTAGE, MAX_DATA_STALENESS_SECONDS
-)
-from strategies.arbitrage_strategy import find_depth_aware_opportunity
+from config.settings import TRADING_PAIRS
 from utils.logger import log
 
-# --- File-specific logger for paper trades ---
-def setup_paper_trade_logger():
-    trade_logger = logging.getLogger("PaperTrader")
-    trade_logger.setLevel(logging.INFO)
-    if trade_logger.hasHandlers():
-        return trade_logger
+# --- Market State Logger (Black Box) ---
+def setup_market_state_logger():
+    """Creates a logger to record the top-of-book state for every tick."""
+    state_logger = logging.getLogger("MarketState")
+    state_logger.setLevel(logging.INFO)
+    # Prevent double logging
+    if state_logger.hasHandlers():
+        return state_logger
     
-    file_handler = logging.FileHandler('paper_trades.log', mode='a')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-    trade_logger.addHandler(file_handler)
-    return trade_logger
+    file_handler = logging.FileHandler('market_state.log', mode='a')
+    # Use a simple formatter for high-volume logging
+    file_handler.setFormatter(logging.Formatter('%(asctime)s.%(msecs)03d | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'))
+    state_logger.addHandler(file_handler)
+    return state_logger
 
-paper_trade_log = setup_paper_trade_logger()
+market_state_log = setup_market_state_logger()
 
 class PriceManager:
     """Manages the latest prices and timestamps for all trading pairs."""
     def __init__(self, pairs):
+        # Store a tuple of (order_book, timestamp)
         self.prices = {pair: {'okx': None, 'bybit': None} for pair in pairs}
         log.info("Price Manager initialized.")
 
@@ -64,72 +59,46 @@ async def handle_update(exchange, message):
         if pair not in TRADING_PAIRS: return
         
         price_manager.update_price(exchange, pair, order_book)
-        await check_for_arbitrage(pair)
+        # Call the black box logger immediately
+        await log_market_state(pair)
 
     except (KeyError, IndexError, TypeError):
         log.warning(f"Malformed message from {exchange}: {message}")
 
-async def check_for_arbitrage(pair):
-    """Diagnostic Mode: Finds and logs every potential opportunity, regardless of profitability."""
+async def log_market_state(pair):
+    """Black Box Logger: Records the top-of-book for every update."""
     price_data = price_manager.get_prices(pair)
     if not price_data or not price_data['okx'] or not price_data['bybit']:
         return
 
-    # --- Staleness Check ---
     okx_book, okx_ts = price_data['okx']
     bybit_book, bybit_ts = price_data['bybit']
 
-    if abs(okx_ts - bybit_ts) > MAX_DATA_STALENESS_SECONDS:
-        return # Skip stale data silently in diagnostic mode
-
-    # --- Quick check for any crossed market ---
     try:
-        okx_best_ask = float(okx_book['asks'][0][0])
-        bybit_best_bid = float(bybit_book['bids'][0][0])
-        bybit_best_ask = float(bybit_book['asks'][0][0])
-        okx_best_bid = float(okx_book['bids'][0][0])
+        okx_ask = float(okx_book['asks'][0][0])
+        okx_bid = float(okx_book['bids'][0][0])
+        bybit_ask = float(bybit_book['asks'][0][0])
+        bybit_bid = float(bybit_book['bids'][0][0])
 
-        is_crossed = (okx_best_ask < bybit_best_bid) or (bybit_best_ask < okx_best_bid)
-        if not is_crossed:
-            return
-            
+        # Calculate the two potential spreads without fees
+        spread_okx_bybit = bybit_bid - okx_ask # Sell Bybit - Buy OKX
+        spread_bybit_okx = okx_bid - bybit_ask # Sell OKX - Buy Bybit
+
+        log_msg = f"{pair} | OKX Ask: {okx_ask:<10} | Bybit Bid: {bybit_bid:<10} | Spread: {spread_okx_bybit:<12.5f} || Bybit Ask: {bybit_ask:<10} | OKX Bid: {okx_bid:<10} | Spread: {spread_bybit_okx:<12.5f}"
+        market_state_log.info(log_msg)
+
     except (IndexError, KeyError):
-        return
-
-    # --- Log every crossed market opportunity ---
-    opportunity = find_depth_aware_opportunity(
-        okx_book, bybit_book, TRADE_SIZE_USDT, TRADING_FEES
-    )
-
-    if opportunity:
-        if opportunity['buy_exchange'] == 'A':
-            opportunity['buy_exchange'] = 'OKX'
-            opportunity['sell_exchange'] = 'Bybit'
-        else:
-            opportunity['buy_exchange'] = 'Bybit'
-            opportunity['sell_exchange'] = 'OKX'
-        opportunity['pair'] = pair
-
-        profit_usd = opportunity['quote_asset_revenue'] - opportunity['quote_asset_cost']
-        trade_info = f"{opportunity['pair']} | Profit: ${profit_usd:.4f} ({opportunity['profit_percentage']*100:.4f}%) | Buy {opportunity['buy_exchange']}@~{opportunity['buy_price']:.4f} / Sell {opportunity['sell_exchange']}@~{opportunity['sell_price']:.4f}"
-
-        # Log all found opportunities to the trade log
-        paper_trade_log.info(f"MARKET_SCAN | {trade_info}")
-        
-        # Also log to main console for real-time view
-        if opportunity['profit_percentage'] > 0:
-            log.info(f"Profitable opportunity found: {trade_info}")
-        else:
-            log.debug(f"Unprofitable opportunity found: {trade_info}")
+        # This will happen if an order book is momentarily empty
+        pass
 
 async def periodic_status_update():
     while True:
         await asyncio.sleep(60)
-        log.info("Heartbeat: Bot is running in Diagnostic Mode.")
+        log.info("Heartbeat: Bot is running in Black Box Diagnostic Mode.")
 
 async def main():
-    log.info("--- Starting Live Paper Trading Bot (DIAGNOSTIC MODE) ---")
-    paper_trade_log.info("--- NEW DIAGNOSTIC SESSION ---")
+    log.info("--- Starting Live Paper Trading Bot (BLACK BOX DIAGNOSTIC MODE) ---")
+    market_state_log.info("--- NEW BLACK BOX SESSION ---")
     
     okx = OKXConnector()
     bybit = BybitConnector()
