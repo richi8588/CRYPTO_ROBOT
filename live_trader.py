@@ -1,5 +1,5 @@
-
 import asyncio
+import time
 from datetime import datetime
 from collections import defaultdict, deque
 import logging
@@ -10,7 +10,7 @@ from connectors.okx_connector import OKXConnector
 from config.settings import (
     TRADING_PAIRS, TRADING_FEES, MIN_PROFIT_THRESHOLD, TRADE_SIZE_USDT,
     DYNAMIC_THRESHOLD_ENABLED, VOLATILITY_LOOKBACK_PERIOD, VOLATILITY_MULTIPLIER,
-    REBALANCE_THRESHOLD_PERCENTAGE, REBALANCE_AMOUNT_PERCENTAGE
+    REBALANCE_THRESHOLD_PERCENTAGE, REBALANCE_AMOUNT_PERCENTAGE, MAX_DATA_STALENESS_SECONDS
 )
 from strategies.arbitrage_strategy import find_depth_aware_opportunity
 from utils.logger import log
@@ -30,15 +30,16 @@ def setup_paper_trade_logger():
 paper_trade_log = setup_paper_trade_logger()
 
 class PriceManager:
-    """Manages the latest prices for all trading pairs from all exchanges."""
+    """Manages the latest prices and timestamps for all trading pairs."""
     def __init__(self, pairs):
+        # Store a tuple of (order_book, timestamp)
         self.prices = {pair: {'okx': None, 'bybit': None} for pair in pairs}
         self.price_history = {pair: deque(maxlen=VOLATILITY_LOOKBACK_PERIOD) for pair in pairs}
         log.info("Price Manager initialized.")
 
     def update_price(self, exchange, pair, order_book_data):
         if pair in self.prices:
-            self.prices[pair][exchange] = order_book_data
+            self.prices[pair][exchange] = (order_book_data, time.time())
             if order_book_data.get('bids') and order_book_data.get('asks'):
                 best_bid = float(order_book_data['bids'][0][0])
                 best_ask = float(order_book_data['asks'][0][0])
@@ -97,44 +98,32 @@ class PortfolioSimulator:
         # Rebalance USDT
         total_usdt = sum(self.balances[ex]['USDT'] for ex in exchanges)
         if total_usdt > 0:
-            for ex in exchanges:
-                ideal_usdt = total_usdt / len(exchanges)
-                deviation = (self.balances[ex]['USDT'] - ideal_usdt) / ideal_usdt
+            ideal_usdt = total_usdt / len(exchanges)
+            if abs(self.balances['okx']['USDT'] - self.balances['bybit']['USDT']) / total_usdt > REBALANCE_THRESHOLD_PERCENTAGE:
+                if self.balances['okx']['USDT'] > ideal_usdt:
+                    from_ex, to_ex = 'okx', 'bybit'
+                else:
+                    from_ex, to_ex = 'bybit', 'okx'
+                amount_to_move = abs(self.balances[from_ex]['USDT'] - ideal_usdt) * REBALANCE_AMOUNT_PERCENTAGE
+                self.balances[from_ex]['USDT'] -= amount_to_move
+                self.balances[to_ex]['USDT'] += amount_to_move
+                log.info(f"REBALANCE: Moved {amount_to_move:.4f} USDT from {from_ex.upper()} to {to_ex.upper()}")
 
-                if abs(deviation) > REBALANCE_THRESHOLD_PERCENTAGE:
-                    amount_to_move = abs(self.balances[ex]['USDT'] - ideal_usdt) * REBALANCE_AMOUNT_PERCENTAGE
-                    if deviation > 0: # Exchange has excess USDT, move out
-                        target_ex = next(e for e in exchanges if e != ex)
-                        self.balances[ex]['USDT'] -= amount_to_move
-                        self.balances[target_ex]['USDT'] += amount_to_move
-                        log.info(f"REBALANCE: Moved {amount_to_move:.4f} USDT from {ex.upper()} to {target_ex.upper()}")
-                    else: # Exchange has deficit USDT, move in
-                        target_ex = next(e for e in exchanges if e != ex)
-                        self.balances[ex]['USDT'] += amount_to_move
-                        self.balances[target_ex]['USDT'] -= amount_to_move
-                        log.info(f"REBALANCE: Moved {amount_to_move:.4f} USDT from {target_ex.upper()} to {ex.upper()}")
-        
-        # Rebalance Base Assets (e.g., SOL, MATIC)
+        # Rebalance Base Assets
         for pair in self.pairs:
             base_asset = pair.split('/')[0]
-            total_base_asset = sum(self.balances[ex][base_asset] for ex in exchanges)
-            if total_base_asset > 0:
-                for ex in exchanges:
-                    ideal_base_asset = total_base_asset / len(exchanges)
-                    deviation = (self.balances[ex][base_asset] - ideal_base_asset) / ideal_base_asset
-
-                    if abs(deviation) > REBALANCE_THRESHOLD_PERCENTAGE:
-                        amount_to_move = abs(self.balances[ex][base_asset] - ideal_base_asset) * REBALANCE_AMOUNT_PERCENTAGE
-                        if deviation > 0: # Exchange has excess base_asset, move out
-                            target_ex = next(e for e in exchanges if e != ex)
-                            self.balances[ex][base_asset] -= amount_to_move
-                            self.balances[target_ex][base_asset] += amount_to_move
-                            log.info(f"REBALANCE: Moved {amount_to_move:.4f} {base_asset} from {ex.upper()} to {target_ex.upper()}")
-                        else: # Exchange has deficit base_asset, move in
-                            target_ex = next(e for e in exchanges if e != ex)
-                            self.balances[ex][base_asset] += amount_to_move
-                            self.balances[target_ex][base_asset] -= amount_to_move
-                            log.info(f"REBALANCE: Moved {amount_to_move:.4f} {base_asset} from {target_ex.upper()} to {ex.upper()}")
+            total_base = sum(self.balances[ex][base_asset] for ex in exchanges)
+            if total_base > 0:
+                ideal_base = total_base / len(exchanges)
+                if abs(self.balances['okx'][base_asset] - self.balances['bybit'][base_asset]) / total_base > REBALANCE_THRESHOLD_PERCENTAGE:
+                    if self.balances['okx'][base_asset] > ideal_base:
+                        from_ex, to_ex = 'okx', 'bybit'
+                    else:
+                        from_ex, to_ex = 'bybit', 'okx'
+                    amount_to_move = abs(self.balances[from_ex][base_asset] - ideal_base) * REBALANCE_AMOUNT_PERCENTAGE
+                    self.balances[from_ex][base_asset] -= amount_to_move
+                    self.balances[to_ex][base_asset] += amount_to_move
+                    log.info(f"REBALANCE: Moved {amount_to_move:.4f} {base_asset} from {from_ex.upper()} to {to_ex.upper()}")
 
 # --- Global instances ---
 price_manager = PriceManager(TRADING_PAIRS)
@@ -164,18 +153,22 @@ async def handle_update(exchange, message):
         log.warning(f"Malformed message from {exchange}: {message}")
 
 async def check_for_arbitrage(pair):
-    latest_prices = price_manager.get_prices(pair)
-    if not latest_prices or not latest_prices['okx'] or not latest_prices['bybit']:
+    price_data = price_manager.get_prices(pair)
+    if not price_data or not price_data['okx'] or not price_data['bybit']:
         return
 
-    # Performance Optimization: Quick check on top-of-book prices first.
+    # --- Staleness Check ---
+    okx_book, okx_ts = price_data['okx']
+    bybit_book, bybit_ts = price_data['bybit']
+
+    if abs(okx_ts - bybit_ts) > MAX_DATA_STALENESS_SECONDS:
+        log.debug(f"Stale data for {pair}, skipping. OKX: {okx_ts:.2f}, Bybit: {bybit_ts:.2f}")
+        return
+
+    # --- Performance Optimization: Quick check on top-of-book prices ---
     try:
-        okx_book = latest_prices['okx']
-        bybit_book = latest_prices['bybit']
-        
         okx_best_ask = float(okx_book['asks'][0][0])
         bybit_best_bid = float(bybit_book['bids'][0][0])
-        
         bybit_best_ask = float(bybit_book['asks'][0][0])
         okx_best_bid = float(okx_book['bids'][0][0])
 
@@ -187,18 +180,16 @@ async def check_for_arbitrage(pair):
 
     log.debug(f"Potential opportunity for {pair}, running full analysis...")
     opportunity = find_depth_aware_opportunity(
-        latest_prices['okx'], latest_prices['bybit'], TRADE_SIZE_USDT, TRADING_FEES
+        okx_book, bybit_book, TRADE_SIZE_USDT, TRADING_FEES
     )
 
     if opportunity:
-        # Correctly map generic exchanges back to specific names
         if opportunity['buy_exchange'] == 'A':
             opportunity['buy_exchange'] = 'OKX'
             opportunity['sell_exchange'] = 'Bybit'
         else:
             opportunity['buy_exchange'] = 'Bybit'
             opportunity['sell_exchange'] = 'OKX'
-
         opportunity['pair'] = pair
 
         current_profit_threshold = MIN_PROFIT_THRESHOLD
@@ -208,8 +199,6 @@ async def check_for_arbitrage(pair):
                 dynamic_threshold_adjustment = volatility * VOLATILITY_MULTIPLIER
                 current_profit_threshold = max(MIN_PROFIT_THRESHOLD, MIN_PROFIT_THRESHOLD + dynamic_threshold_adjustment)
                 log.debug(f"Dynamic threshold for {pair}: {current_profit_threshold:.6f} (Volatility: {volatility:.6f})")
-            else:
-                log.debug(f"Volatility for {pair} is zero or insufficient data, using static threshold.")
 
         if opportunity['profit_percentage'] >= current_profit_threshold:
             profit_usd = opportunity['quote_asset_revenue'] - opportunity['quote_asset_cost']

@@ -48,3 +48,6 @@ VOLATILITY_MULTIPLIER = 2.0 # Multiplier for volatility to add to min profit thr
 REBALANCE_THRESHOLD_PERCENTAGE = 0.20 # If an asset balance deviates by more than 20% from ideal, trigger rebalance
 REBALANCE_AMOUNT_PERCENTAGE = 0.50 # Move 50% of the excess amount during rebalance
 
+# Data Staleness Settings
+MAX_DATA_STALENESS_SECONDS = 0.5 # Maximum time difference between two order books to be considered valid
+
