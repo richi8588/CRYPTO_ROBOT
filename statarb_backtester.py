@@ -71,9 +71,9 @@ def run_backtest():
                 entry_price_s1 = df[SYMBOL_1].iloc[i]
                 entry_price_s2 = df[SYMBOL_2].iloc[i]
                 
-                # Calculate quantities based on half capital for each leg
+                # Correctly size positions: size leg 1 based on capital, size leg 2 based on leg 1 qty and hedge ratio
                 qty_s1 = (current_capital / 2) / entry_price_s1
-                qty_s2 = ((current_capital / 2) / entry_price_s2) * hedge_ratio # Hedged quantity
+                qty_s2 = qty_s1 * hedge_ratio
 
                 trades.append({'type': 'long', 'entry_date': df.index[i], 
                                'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2,
@@ -84,9 +84,9 @@ def run_backtest():
                 entry_price_s1 = df[SYMBOL_1].iloc[i]
                 entry_price_s2 = df[SYMBOL_2].iloc[i]
 
-                # Calculate quantities based on half capital for each leg
+                # Correctly size positions
                 qty_s1 = (current_capital / 2) / entry_price_s1
-                qty_s2 = ((current_capital / 2) / entry_price_s2) * hedge_ratio # Hedged quantity
+                qty_s2 = qty_s1 * hedge_ratio
 
                 trades.append({'type': 'short', 'entry_date': df.index[i], 
                                'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2,
