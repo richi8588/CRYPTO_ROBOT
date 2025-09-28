@@ -1,4 +1,3 @@
-
 import sys
 import os
 
@@ -18,7 +17,7 @@ from utils.logger import log
 # --- Configuration ---
 # The assets we want to test for pair trading relationships.
 # The script will test all unique combinations of these assets against USDT.
-SYMBOLS_TO_TEST = ['BTC', 'ETH', 'TON', 'TAC']
+SYMBOLS_TO_TEST = ['DOGE', 'SHIB', 'MATIC', 'SOL', 'AVAX', 'DOT', 'ADA']
 
 # Data parameters
 TIMEFRAME = "D" # Daily candles
@@ -35,16 +34,35 @@ def get_historical_prices(symbol):
     """Fetches historical k-line data for a given symbol from Bybit."""
     try:
         log.info(f"Fetching {LIMIT} days of historical data for {symbol}...")
+        # SHIB is a special case, its main pair is 1000SHIB/USDT on many exchanges
+        # We will try both SHIBUSDT and 1000SHIBUSDT if one fails
+        symbol_to_fetch = f"{symbol}USDT"
+        if symbol == 'SHIB':
+            symbol_to_fetch = '1000SHIBUSDT' # Bybit uses this convention
+
         response = session.get_kline(
             category="spot",
-            symbol=f"{symbol}USDT",
+            symbol=symbol_to_fetch,
             interval=TIMEFRAME,
             limit=LIMIT
         )
+
+        # If the primary symbol fails, try the base symbol (for SHIB)
+        if symbol == 'SHIB' and response['retCode'] != 0:
+            log.warning("Could not fetch 1000SHIBUSDT, trying SHIBUSDT...")
+            symbol_to_fetch = f"{symbol}USDT"
+            response = session.get_kline(
+                category="spot",
+                symbol=symbol_to_fetch,
+                interval=TIMEFRAME,
+                limit=LIMIT
+            )
+
         if response['retCode'] == 0 and response['result']['list']:
             data = response['result']['list']
             df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            # Fix for FutureWarning: explicitly cast to numeric before using unit='ms'
+            df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
             df.set_index('timestamp', inplace=True)
             df['close'] = df['close'].astype(float)
             # Bybit returns data in reverse chronological order, so we reverse it back
@@ -68,12 +86,19 @@ def find_cointegrated_pairs(symbols):
         series1 = get_historical_prices(symbol1)
         series2 = get_historical_prices(symbol2)
 
-        if series1 is None or series2 is None or len(series1) != len(series2):
-            log.warning(f"Skipping pair {symbol1}-{symbol2} due to data mismatch.")
+        if series1 is None or series2 is None or len(series1) < (LIMIT * 0.9) or len(series2) < (LIMIT * 0.9):
+            log.warning(f"Skipping pair {symbol1}-{symbol2} due to insufficient or mismatched data.")
+            continue
+
+        # Ensure dataframes are aligned by timestamp
+        aligned_series1, aligned_series2 = series1.align(series2, join='inner')
+
+        if len(aligned_series1) < (LIMIT * 0.9):
+            log.warning(f"Skipping pair {symbol1}-{symbol2} due to insufficient aligned data.")
             continue
 
         # Perform the Engle-Granger cointegration test
-        score, p_value, _ = coint(series1, series2)
+        score, p_value, _ = coint(aligned_series1, aligned_series2)
         cointegration_results.append({
             'pair': f"{symbol1}-{symbol2}",
             'p_value': p_value
@@ -105,6 +130,9 @@ def analyze_and_plot_pair(pair_string):
 
     if series1 is None or series2 is None:
         return
+    
+    # Align data before analysis
+    series1, series2 = series1.align(series2, join='inner')
 
     # 1. Calculate spread using linear regression (OLS)
     y = series1
