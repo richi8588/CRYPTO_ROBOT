@@ -13,8 +13,8 @@ from utils.logger import log
 
 # --- Configuration ---
 # The pair to backtest
-SYMBOL_1 = 'DOGE'
-SYMBOL_2 = 'LINK'
+SYMBOL_1 = 'ADA'
+SYMBOL_2 = 'BCH'
 
 # --- HYPERPARAMETERS ---
 # Data & Model
