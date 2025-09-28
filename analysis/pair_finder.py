@@ -96,8 +96,8 @@ def find_cointegrated_pairs(symbols):
     for pair in pairs:
         symbol1, symbol2 = pair
         
-        series1 = get_historical_prices(symbol1)
-        series2 = get_historical_prices(symbol2)
+        series1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
+        series2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
 
         if series1 is None or series2 is None or len(series1) < (LIMIT * 0.9) or len(series2) < (LIMIT * 0.9):
             log.warning(f"Skipping pair {symbol1}-{symbol2} due to insufficient or mismatched data.")
@@ -138,8 +138,8 @@ def analyze_and_plot_pair(pair_string):
     log.info(f"--- Analyzing Best Pair: {pair_string} ---")
     symbol1, symbol2 = pair_string.split('-')
 
-    series1 = get_historical_prices(symbol1)
-    series2 = get_historical_prices(symbol2)
+    series1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
+    series2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
 
     if series1 is None or series2 is None:
         return
