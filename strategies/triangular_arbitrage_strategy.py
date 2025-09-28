@@ -49,55 +49,60 @@ def get_amount_out(order_book_side, amount_in, is_buy_base):
 
 def find_triangular_opportunity(books, pairs, start_amount, fee):
     """
-    Final, correct, and explicit logic for triangular arbitrage.
+    Final, definitive, and rigorously correct logic for triangular arbitrage.
     Assumes a triangle of the form (A/C, B/A, B/C) starting with currency C.
-    Example: (BTC/USDT, ETH/BTC, ETH/USDT) starting with USDT.
+    Example: ('BTC/USDT', 'ETH/BTC', 'ETH/USDT') starting with USDT.
     """
     try:
         p_middle_base, p_quote_middle, p_quote_base = pairs
         book_middle_base, book_quote_middle, book_quote_base = books[p_middle_base], books[p_quote_middle], books[p_quote_base]
 
+        base_currency = p_middle_base.split('/')[1]  # e.g., USDT
+        middle_currency = p_middle_base.split('/')[0] # e.g., BTC
+        quote_currency = p_quote_middle.split('/')[0]   # e.g., ETH
+
         # --- Path 1: C -> A -> B -> C (e.g., USDT -> BTC -> ETH -> USDT) ---
         # 1. Buy Middle (A) with Base (C) - e.g., Buy BTC with USDT
-        # Use asks of BTC/USDT. Spend USDT, get BTC.
+        # Use asks of BTC/USDT. is_buy_base=True because we are buying the base (BTC) of the pair.
         amount_A = get_amount_out(book_middle_base['asks'], start_amount, is_buy_base=True) * (1 - fee)
         
         if amount_A > 0:
-            # 2. Sell Middle (A) for Quote (B) - e.g., Sell BTC for ETH
-            # Use bids of ETH/BTC. Spend BTC, get ETH.
-            amount_B = get_amount_out(book_quote_middle['bids'], amount_A, is_buy_base=False) * (1 - fee)
+            # 2. Buy Quote (B) with Middle (A) - e.g., Buy ETH with BTC
+            # Use asks of ETH/BTC. is_buy_base=True because we are buying the base (ETH) of the pair.
+            amount_B = get_amount_out(book_quote_middle['asks'], amount_A, is_buy_base=True) * (1 - fee)
             
             if amount_B > 0:
                 # 3. Sell Quote (B) for Base (C) - e.g., Sell ETH for USDT
-                # Use bids of ETH/USDT. Spend ETH, get USDT.
+                # Use bids of ETH/USDT. is_buy_base=False because we are selling the base (ETH) of the pair.
                 final_amount = get_amount_out(book_quote_base['bids'], amount_B, is_buy_base=False) * (1 - fee)
 
                 if final_amount > 0:
                     profit_pct = (final_amount / start_amount) - 1
+                    # Return the first valid path found
                     return {
-                        'path': f"{p_middle_base.split('/')[1]} -> {p_middle_base.split('/')[0]} -> {p_quote_middle.split('/')[0]} -> {p_quote_base.split('/')[1]}",
-                        'profit_pct': profit_pct
+                        'path': f"{base_currency}->{middle_currency}->{quote_currency}->{base_currency}",
+                        'profit_pct': profit_pct,
                     }
 
         # --- Path 2: C -> B -> A -> C (e.g., USDT -> ETH -> BTC -> USDT) ---
         # 1. Buy Quote (B) with Base (C) - e.g., Buy ETH with USDT
-        # Use asks of ETH/USDT. Spend USDT, get ETH.
+        # Use asks of ETH/USDT. is_buy_base=True because we are buying the base (ETH) of the pair.
         amount_B = get_amount_out(book_quote_base['asks'], start_amount, is_buy_base=True) * (1 - fee)
 
         if amount_B > 0:
-            # 2. Buy Middle (A) with Quote (B) - e.g., Buy BTC with ETH
-            # Use asks of ETH/BTC. Spend ETH, get BTC.
-            amount_A = get_amount_out(book_quote_middle['asks'], amount_B, is_buy_base=True) * (1 - fee)
+            # 2. Sell Quote (B) for Middle (A) - e.g., Sell ETH for BTC
+            # Use bids of ETH/BTC. is_buy_base=False because we are selling the base (ETH) of the pair.
+            amount_A = get_amount_out(book_quote_middle['bids'], amount_B, is_buy_base=False) * (1 - fee)
 
             if amount_A > 0:
                 # 3. Sell Middle (A) for Base (C) - e.g., Sell BTC for USDT
-                # Use bids of BTC/USDT. Spend BTC, get USDT.
+                # Use bids of BTC/USDT. is_buy_base=False because we are selling the base (BTC) of the pair.
                 final_amount = get_amount_out(book_middle_base['bids'], amount_A, is_buy_base=False) * (1 - fee)
 
                 if final_amount > 0:
                     profit_pct = (final_amount / start_amount) - 1
                     return {
-                        'path': f"{p_quote_base.split('/')[1]} -> {p_quote_base.split('/')[0]} -> {p_middle_base.split('/')[0]} -> {p_middle_base.split('/')[1]}",
+                        'path': f"{base_currency}->{quote_currency}->{middle_currency}->{base_currency}",
                         'profit_pct': profit_pct
                     }
 
