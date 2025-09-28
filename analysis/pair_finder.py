@@ -20,7 +20,7 @@ from utils.logger import log
 SYMBOLS_TO_TEST = ['BTC', 'ETH', 'SOL', 'AVAX', 'ADA', 'DOT', 'MATIC', 'DOGE', 'SHIB', 'PEPE', 'WIF', 'UNI', 'LINK', 'LDO', 'AAVE', 'LTC', 'BCH', 'XRP']
 
 # Data parameters
-TIMEFRAME = "1h" # Daily candles
+TIMEFRAME = "60" # 1-hour candles
 LIMIT = 200 # Number of candles to fetch
 
 # Cointegration test significance level
