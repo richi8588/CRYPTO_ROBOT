@@ -39,21 +39,35 @@ class StrategyManager:
     def get_historical_prices(self, symbol):
         try:
             log.info(f"Fetching {self.window} candles of {self.timeframe} data for {symbol}...")
-            symbol_to_fetch = f"{self.s1}USDT"
-            if symbol == 'PEPE': symbol_to_fetch = '1000PEPEUSDT' # Bybit convention
             
+            # Try primary symbol first (e.g., 1000PEPEUSDT)
+            symbol_to_fetch = f"{symbol}USDT"
+            if symbol == 'PEPE': symbol_to_fetch = '1000PEPEUSDT'
+            if symbol == 'SHIB': symbol_to_fetch = '1000SHIBUSDT'
+
             response = self.api_session.get_kline(
                 category="spot", symbol=symbol_to_fetch, interval=self.timeframe, limit=self.window)
-            
+
+            # Fallback for pairs like PEPE/SHIB if the 1000... convention fails
+            if response['retCode'] != 0 and (symbol == 'PEPE' or symbol == 'SHIB'):
+                log.warning(f"Could not fetch {symbol_to_fetch}, trying base {symbol}USDT...")
+                symbol_to_fetch = f"{symbol}USDT"
+                response = self.api_session.get_kline(
+                    category="spot", symbol=symbol_to_fetch, interval=self.timeframe, limit=self.window)
+
             if response['retCode'] == 0 and response['result']['list']:
                 data = response['result']['list']
                 df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
                 df.set_index('timestamp', inplace=True)
                 df['close'] = df['close'].astype(float)
-                # Adjust for 1000PEPE
-                if symbol == 'PEPE': df['close'] = df['close'] / 1000
+                
+                # Adjust price for special tickers
+                if '1000' in symbol_to_fetch:
+                    df['close'] = df['close'] / 1000
+
                 return df.iloc[::-1]['close']
+            
             log.error(f"Could not fetch data for {symbol}: {response['retMsg']}")
             return None
         except Exception as e:
