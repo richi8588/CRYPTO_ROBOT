@@ -13,12 +13,12 @@ from utils.logger import log
 
 # --- Configuration ---
 # The pair we found in Phase 1
-SYMBOL_1 = 'ADA'
-SYMBOL_2 = 'LDO'
+SYMBOL_1 = 'DOT'
+SYMBOL_2 = 'PEPE'
 
 # Strategy Parameters
-ENTRY_Z_SCORE = 0.8
-EXIT_Z_SCORE = 0.2
+ENTRY_Z_SCORE = 2.0
+EXIT_Z_SCORE = 0.5
 STOP_LOSS_Z_SCORE = 3.0
 
 # Financial Parameters

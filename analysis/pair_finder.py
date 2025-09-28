@@ -138,7 +138,7 @@ def analyze_and_plot_pair(pair_string):
     y = series1
     x = sm.add_constant(series2)
     model = sm.OLS(y, x).fit()
-    hedge_ratio = model.params[1]
+    hedge_ratio = model.params.iloc[1]
     spread = series1 - hedge_ratio * series2
 
     log.info(f"Calculated hedge ratio: {hedge_ratio:.4f}")
