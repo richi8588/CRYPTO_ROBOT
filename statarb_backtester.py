@@ -153,7 +153,7 @@ def run_backtest():
 
     log.info(f"Final Capital: {capital:.2f} USD")
     log.info(f"Total Net PnL: {trade_df['pnl'].sum():.2f} USD")
-    log.info(f"Total Trades: {len(trade_df})")
+    log.info(f"Total Trades: {len(trade_df)}")")
     log.info(f"Win Rate: {len(wins) / len(trade_df) * 100:.2f}%" if len(trade_df) > 0 else "0.00%")
     log.info(f"Average Win: {wins['pnl'].mean():.2f} USD" if len(wins) > 0 else "0.00")
     log.info(f"Average Loss: {losses['pnl'].mean():.2f} USD" if len(losses) > 0 else "0.00")
