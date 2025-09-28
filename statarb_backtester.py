@@ -167,7 +167,7 @@ def run_backtest():
         ax1.axvline(trade.entry_date, color=color, linestyle='--', alpha=0.7)
         ax1.axvline(trade.exit_date, color='black', linestyle=':', alpha=0.7)
     
-    equity_df = pd.Series(equity_curve, index=df.index[REGRESSION_WINDOW-1:])
+    equity_df = pd.Series(equity_curve, index=df.index[REGRESSION_WINDOW:])
     equity_df.plot(ax=ax2, label='Equity Curve')
     ax2.set_title('Portfolio Equity Curve')
     ax2.set_ylabel('Capital (USD)')
