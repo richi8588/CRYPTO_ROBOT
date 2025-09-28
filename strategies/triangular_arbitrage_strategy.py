@@ -1,3 +1,4 @@
+
 # FINAL ATTEMPT: Rewriting the strategy from scratch with the most explicit,
 # unit-aware, and mathematically sound logic possible.
 
@@ -27,8 +28,6 @@ def get_amount_out(order_book_side, amount_in, is_buy_base):
             break
 
         if is_buy_base: # Buying base currency (e.g., spending USDT to get BTC on BTC/USDT)
-            # amount_in is in QUOTE currency (USDT)
-            # price is QUOTE/BASE (USDT/BTC), volume is in BASE (BTC)
             quote_available_at_level = volume * price
             quote_to_spend_at_level = min(amount_in - spent_so_far, quote_available_at_level)
             
@@ -36,8 +35,6 @@ def get_amount_out(order_book_side, amount_in, is_buy_base):
             amount_out += base_received
             spent_so_far += quote_to_spend_at_level
         else: # Selling base currency (e.g., spending BTC to get USDT on BTC/USDT)
-            # amount_in is in BASE currency (BTC)
-            # price is QUOTE/BASE (USDT/BTC), volume is in BASE (BTC)
             base_to_spend_at_level = min(amount_in - spent_so_far, volume)
 
             quote_received = base_to_spend_at_level * price
@@ -49,60 +46,67 @@ def get_amount_out(order_book_side, amount_in, is_buy_base):
 
 def find_triangular_opportunity(books, pairs, start_amount, fee):
     """
-    Final, definitive, and rigorously correct logic for triangular arbitrage.
-    Assumes a triangle of the form (A/C, B/A, B/C) starting with currency C.
-    Example: ('BTC/USDT', 'ETH/BTC', 'ETH/USDT') starting with USDT.
+    Final attempt with extreme verbose logging to trace every calculation step.
     """
     try:
         p_middle_base, p_quote_middle, p_quote_base = pairs
         book_middle_base, book_quote_middle, book_quote_base = books[p_middle_base], books[p_quote_middle], books[p_quote_base]
 
-        base_currency = p_middle_base.split('/')[1]  # e.g., USDT
-        middle_currency = p_middle_base.split('/')[0] # e.g., BTC
-        quote_currency = p_quote_middle.split('/')[0]   # e.g., ETH
+        base_C = p_middle_base.split('/')[1]
+        middle_A = p_middle_base.split('/')[0]
+        quote_B = p_quote_middle.split('/')[0]
 
         # --- Path 1: C -> A -> B -> C (e.g., USDT -> BTC -> ETH -> USDT) ---
-        # 1. Buy Middle (A) with Base (C) - e.g., Buy BTC with USDT
-        # Use asks of BTC/USDT. is_buy_base=True because we are buying the base (BTC) of the pair.
+        log.info(f"--- PATH 1: {base_C}->{middle_A}->{quote_B}->{base_C} ---")
+        # 1. Buy Middle (A) with Base (C)
+        log.info(f"  STEP 1 (C->A): Spending {start_amount:.4f} {base_C} on {p_middle_base} asks...")
         amount_A = get_amount_out(book_middle_base['asks'], start_amount, is_buy_base=True) * (1 - fee)
+        log.info(f"  STEP 1 RESULT: Received {amount_A:.8f} {middle_A}")
         
         if amount_A > 0:
-            # 2. Buy Quote (B) with Middle (A) - e.g., Buy ETH with BTC
-            # Use asks of ETH/BTC. is_buy_base=True because we are buying the base (ETH) of the pair.
+            # 2. Buy Quote (B) with Middle (A)
+            log.info(f"  STEP 2 (A->B): Spending {amount_A:.8f} {middle_A} on {p_quote_middle} asks...")
             amount_B = get_amount_out(book_quote_middle['asks'], amount_A, is_buy_base=True) * (1 - fee)
+            log.info(f"  STEP 2 RESULT: Received {amount_B:.8f} {quote_B}")
             
             if amount_B > 0:
-                # 3. Sell Quote (B) for Base (C) - e.g., Sell ETH for USDT
-                # Use bids of ETH/USDT. is_buy_base=False because we are selling the base (ETH) of the pair.
+                # 3. Sell Quote (B) for Base (C)
+                log.info(f"  STEP 3 (B->C): Spending {amount_B:.8f} {quote_B} on {p_quote_base} bids...")
                 final_amount = get_amount_out(book_quote_base['bids'], amount_B, is_buy_base=False) * (1 - fee)
+                log.info(f"  STEP 3 RESULT: Received {final_amount:.4f} {base_C}")
 
                 if final_amount > 0:
                     profit_pct = (final_amount / start_amount) - 1
-                    # Return the first valid path found
+                    log.info(f"  FINAL CALC: Start={start_amount:.4f} {base_C}, End={final_amount:.4f} {base_C}, Profit={profit_pct*100:.4f}%")
                     return {
-                        'path': f"{base_currency}->{middle_currency}->{quote_currency}->{base_currency}",
+                        'path': f"{base_C}->{middle_A}->{quote_B}->{base_C}",
                         'profit_pct': profit_pct,
                     }
 
         # --- Path 2: C -> B -> A -> C (e.g., USDT -> ETH -> BTC -> USDT) ---
-        # 1. Buy Quote (B) with Base (C) - e.g., Buy ETH with USDT
-        # Use asks of ETH/USDT. is_buy_base=True because we are buying the base (ETH) of the pair.
+        log.info(f"--- PATH 2: {base_C}->{quote_B}->{middle_A}->{base_C} ---")
+        # 1. Buy Quote (B) with Base (C)
+        log.info(f"  STEP 1 (C->B): Spending {start_amount:.4f} {base_C} on {p_quote_base} asks...")
         amount_B = get_amount_out(book_quote_base['asks'], start_amount, is_buy_base=True) * (1 - fee)
+        log.info(f"  STEP 1 RESULT: Received {amount_B:.8f} {quote_B}")
 
         if amount_B > 0:
-            # 2. Sell Quote (B) for Middle (A) - e.g., Sell ETH for BTC
-            # Use bids of ETH/BTC. is_buy_base=False because we are selling the base (ETH) of the pair.
+            # 2. Sell Quote (B) for Middle (A)
+            log.info(f"  STEP 2 (B->A): Spending {amount_B:.8f} {quote_B} on {p_quote_middle} bids...")
             amount_A = get_amount_out(book_quote_middle['bids'], amount_B, is_buy_base=False) * (1 - fee)
+            log.info(f"  STEP 2 RESULT: Received {amount_A:.8f} {middle_A}")
 
             if amount_A > 0:
-                # 3. Sell Middle (A) for Base (C) - e.g., Sell BTC for USDT
-                # Use bids of BTC/USDT. is_buy_base=False because we are selling the base (BTC) of the pair.
+                # 3. Sell Middle (A) for Base (C)
+                log.info(f"  STEP 3 (A->C): Spending {amount_A:.8f} {middle_A} on {p_middle_base} bids...")
                 final_amount = get_amount_out(book_middle_base['bids'], amount_A, is_buy_base=False) * (1 - fee)
+                log.info(f"  STEP 3 RESULT: Received {final_amount:.4f} {base_C}")
 
                 if final_amount > 0:
                     profit_pct = (final_amount / start_amount) - 1
+                    log.info(f"  FINAL CALC: Start={start_amount:.4f} {base_C}, End={final_amount:.4f} {base_C}, Profit={profit_pct*100:.4f}%")
                     return {
-                        'path': f"{base_currency}->{quote_currency}->{middle_currency}->{base_currency}",
+                        'path': f"{base_C}->{quote_B}->{middle_A}->{base_C}",
                         'profit_pct': profit_pct
                     }
 
