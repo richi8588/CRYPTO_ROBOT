@@ -3,3 +3,5 @@ websockets
 pandas
 numpy
 pybit
+statsmodels
+matplotlib
