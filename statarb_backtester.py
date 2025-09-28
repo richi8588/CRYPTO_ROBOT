@@ -19,7 +19,7 @@ SYMBOL_2 = 'PEPE'
 # --- HYPERPARAMETERS ---
 # Data & Model
 TIMEFRAME = "60" # 1-hour candles
-HISTORY_LIMIT = 500 # How many candles to fetch initially
+HISTORY_LIMIT = 8760 # How many candles to fetch initially (1 year of hourly data)
 REGRESSION_WINDOW = 60 # Rolling window for OLS regression (e.g., last 60 hours)
 USE_LOG_SPREAD = True # Use log(s1) - ratio * log(s2)
 
@@ -41,13 +41,12 @@ FEES_PER_TRADE_LEG = 0.001 # 0.1% fee
 # --- Backtester Engine ---
 
 def run_backtest():
+    """Runs a backtest for the given pair and strategy parameters."""
     log.info(f"--- Starting Advanced Backtest for {SYMBOL_1}-{SYMBOL_2} ---")
 
     # 1. Load Data
-    series1 = get_historical_prices(SYMBOL_1)
-    series2 = get_historical_prices(SYMBOL_2)
-    if series1 is None or series2 is None: return
-    df = pd.DataFrame({SYMBOL_1: series1, SYMBOL_2: series2}).dropna()
+    series1 = get_historical_prices(SYMBOL_1, TIMEFRAME, HISTORY_LIMIT)
+    series2 = get_historical_prices(SYMBOL_2, TIMEFRAME, HISTORY_LIMIT)
 
     # 2. Initialize columns
     df['z_score'] = np.nan

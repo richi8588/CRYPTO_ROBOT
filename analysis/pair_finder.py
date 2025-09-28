@@ -30,49 +30,62 @@ P_VALUE_THRESHOLD = 0.05
 # We use an unauthenticated session as we only need public k-line data
 session = HTTP()
 
-def get_historical_prices(symbol):
-    """Fetches historical k-line data for a given symbol from Bybit."""
-    try:
-        log.info(f"Fetching {LIMIT} days of historical data for {symbol}...")
-        # SHIB is a special case, its main pair is 1000SHIB/USDT on many exchanges
-        # We will try both SHIBUSDT and 1000SHIBUSDT if one fails
-        symbol_to_fetch = f"{symbol}USDT"
-        if symbol == 'SHIB':
-            symbol_to_fetch = '1000SHIBUSDT' # Bybit uses this convention
+def get_historical_prices(symbol, interval, total_limit):
+    """Fetches historical k-line data for a given symbol from Bybit, handling pagination."""
+    log.info(f"Fetching {total_limit} candles of {interval} data for {symbol}...")
+    all_data = []
+    end_time = None
 
-        response = session.get_kline(
-            category="spot",
-            symbol=symbol_to_fetch,
-            interval=TIMEFRAME,
-            limit=LIMIT
-        )
+    while len(all_data) < total_limit:
+        remaining = total_limit - len(all_data)
+        fetch_limit = min(remaining, 1000) # Bybit max limit is 1000
 
-        # If the primary symbol fails, try the base symbol (for SHIB)
-        if symbol == 'SHIB' and response['retCode'] != 0:
-            log.warning("Could not fetch 1000SHIBUSDT, trying SHIBUSDT...")
+        try:
             symbol_to_fetch = f"{symbol}USDT"
-            response = session.get_kline(
-                category="spot",
-                symbol=symbol_to_fetch,
-                interval=TIMEFRAME,
-                limit=LIMIT
-            )
+            if symbol in ['PEPE', 'SHIB', 'WIF']: symbol_to_fetch = f"1000{symbol}USDT"
 
-        if response['retCode'] == 0 and response['result']['list']:
-            data = response['result']['list']
-            df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
-            # Fix for FutureWarning: explicitly cast to numeric before using unit='ms'
-            df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
-            df.set_index('timestamp', inplace=True)
-            df['close'] = df['close'].astype(float)
-            # Bybit returns data in reverse chronological order, so we reverse it back
-            return df.iloc[::-1]['close']
-        else:
-            log.error(f"Could not fetch data for {symbol}: {response['retMsg']}")
-            return None
-    except Exception as e:
-        log.error(f"An error occurred while fetching data for {symbol}: {e}")
+            params = {
+                "category": "spot",
+                "symbol": symbol_to_fetch,
+                "interval": interval,
+                "limit": fetch_limit
+            }
+            if end_time:
+                params['endTime'] = end_time
+
+            response = session.get_kline(**params)
+
+            # Fallback if 1000... ticker fails
+            if response['retCode'] != 0 and symbol in ['PEPE', 'SHIB', 'WIF']:
+                log.warning(f"Could not fetch {symbol_to_fetch}, trying base {symbol}USDT...")
+                params['symbol'] = f"{symbol}USDT"
+                response = session.get_kline(**params)
+
+            if response['retCode'] == 0 and response['result']['list']:
+                data = response['result']['list']
+                all_data.extend(data)
+                end_time = int(data[0][0]) - 1 # Subtract 1ms to avoid overlap
+                if len(data) < fetch_limit:
+                    log.warning(f"Reached the end of available historical data for {symbol}. Fetched {len(all_data)} points.")
+                    break # No more data to fetch
+            else:
+                log.error(f"Could not fetch data for {symbol}: {response['retMsg']}")
+                break
+        except Exception as e:
+            log.error(f"An error occurred while fetching data for {symbol}: {e}")
+            break
+
+    if not all_data:
         return None
+
+    df = pd.DataFrame(all_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+    df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+    df.drop_duplicates(subset=['timestamp'], inplace=True)
+    df.set_index('timestamp', inplace=True)
+    df['close'] = df['close'].astype(float)
+    if '1000' in params['symbol']:
+        df['close'] = df['close'] / 1000
+    return df.iloc[::-1]['close']
 
 def find_cointegrated_pairs(symbols):
     """Tests all pairs of symbols for cointegration and returns the best one."""
