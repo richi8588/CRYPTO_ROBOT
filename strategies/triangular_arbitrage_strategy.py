@@ -1,4 +1,3 @@
-
 # FINAL ATTEMPT: Rewriting the strategy from scratch with the most explicit,
 # unit-aware, and mathematically sound logic possible.
 
