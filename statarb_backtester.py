@@ -17,8 +17,8 @@ SYMBOL_1 = 'ADA'
 SYMBOL_2 = 'LDO'
 
 # Strategy Parameters
-ENTRY_Z_SCORE = 1.0
-EXIT_Z_SCORE = 0.5
+ENTRY_Z_SCORE = 0.8
+EXIT_Z_SCORE = 0.2
 STOP_LOSS_Z_SCORE = 3.0
 
 # Financial Parameters
