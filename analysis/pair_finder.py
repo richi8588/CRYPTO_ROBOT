@@ -17,7 +17,7 @@ from utils.logger import log
 # --- Configuration ---
 # The assets we want to test for pair trading relationships.
 # The script will test all unique combinations of these assets against USDT.
-SYMBOLS_TO_TEST = ['DOGE', 'SHIB', 'MATIC', 'SOL', 'AVAX', 'DOT', 'ADA']
+SYMBOLS_TO_TEST = ['BTC', 'ETH', 'SOL', 'AVAX', 'ADA', 'DOT', 'MATIC', 'DOGE', 'SHIB', 'PEPE', 'WIF', 'UNI', 'LINK', 'LDO', 'AAVE', 'LTC', 'BCH', 'XRP']
 
 # Data parameters
 TIMEFRAME = "D" # Daily candles
