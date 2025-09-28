@@ -1,121 +1,106 @@
+
 # This file contains the logic for finding triangular arbitrage opportunities.
+# This is a complete rewrite using an explicit, unit-aware calculation method
+# to fix critical mathematical flaws in the previous version.
 
-def calculate_execution_details(order_book_side, amount_to_trade, is_buy_side):
+import logging
+from utils.logger import log
+
+
+def calculate_trade_outcome(order_book_side, amount_to_spend, fee, trade_type):
     """
-    Calculates the execution details (VWAP, total cost/revenue) for a trade against an order book.
-    This is a generic utility function.
+    Calculates the outcome of a single trade leg, considering order book depth.
 
-    :param order_book_side: A list of [price, volume] lists (bids or asks).
-    :param amount_to_trade: The amount of asset to buy or sell.
-    :param is_buy_side: True if we are buying (iterating asks), False if selling (iterating bids).
-    :return: A dict with {'avg_price', 'amount_filled', 'cost_or_revenue'}.
+    :param order_book_side: The asks or bids from the order book.
+    :param amount_to_spend: The amount of currency we are spending.
+    :param fee: The taker fee.
+    :param trade_type: 'base_to_quote' (selling base for quote) or 'quote_to_base' (buying base with quote).
+    :return: The amount of currency received after the trade and fees.
     """
-    total_cost_or_revenue = 0
-    amount_filled = 0
-    remaining_amount = amount_to_trade
+    amount_received = 0
+    spent_so_far = 0
 
-    for level in order_book_side:
-        price = float(level[0])
-        volume = float(level[1])
+    for price_str, volume_str in order_book_side:
+        price = float(price_str)
+        volume = float(volume_str)
 
-        if remaining_amount <= 0:
+        if spent_so_far >= amount_to_spend:
             break
 
-        trade_volume = 0
-        if is_buy_side:
-            # When buying, amount_to_trade is in the quote currency. We need to see how much base we can buy.
-            # This logic is simplified; a more precise version would handle this conversion more carefully.
-            # For our purpose, we assume amount_to_trade is in the asset we are spending.
-            # Let's adjust the logic to be more robust.
-            # amount_to_trade is the amount of the asset we want to acquire or dispose of.
-            trade_volume = min(remaining_amount, volume)
-            total_cost_or_revenue += trade_volume * price
-        else:
-            # When selling, amount_to_trade is in the base currency.
-            trade_volume = min(remaining_amount, volume)
-            total_cost_or_revenue += trade_volume * price
+        if trade_type == 'quote_to_base': # Buying the base currency with the quote currency
+            # How much quote currency can we spend at this level?
+            can_spend = volume * price
+            # How much do we still need to spend?
+            will_spend = min(amount_to_spend - spent_so_far, can_spend)
+            
+            amount_received += will_spend / price
+            spent_so_far += will_spend
 
-        amount_filled += trade_volume
-        remaining_amount -= trade_volume
+        elif trade_type == 'base_to_quote': # Selling the base currency for the quote currency
+            # How much base currency can we sell at this level?
+            can_sell = volume
+            # How much do we still need to sell?
+            will_sell = min(amount_to_spend - spent_so_far, can_sell)
 
-    if amount_filled == 0:
-        return None
+            amount_received += will_sell * price
+            spent_so_far += will_sell
 
-    avg_price = total_cost_or_revenue / amount_filled
-    return {
-        'avg_price': avg_price,
-        'amount_filled': amount_filled,
-        'cost_or_revenue': total_cost_or_revenue
-    }
+    if spent_so_far == 0:
+        return 0
+
+    return amount_received * (1 - fee)
 
 
 def find_triangular_opportunity(books, pairs, start_amount, fee):
     """
-    Corrected logic for finding triangular arbitrage opportunities.
+    New, explicit, and correct logic for finding triangular arbitrage opportunities.
     """
-    p1, p2, p3 = pairs # e.g., ('BTC/USDT', 'ETH/BTC', 'ETH/USDT')
-    book1, book2, book3 = books[p1], books[p2], books[p3]
-    base_currency = p1.split('/')[1] # USDT
-    middle_currency = p1.split('/')[0] # BTC
-    quote_currency = p2.split('/')[0] # ETH
-
-    # --- Path 1: Base -> Middle -> Quote -> Base (e.g., USDT -> BTC -> ETH -> USDT) ---
     try:
-        # Step 1: Buy Middle with Base (e.g., Buy BTC with USDT)
-        # Trade on BTC/USDT asks. We have USDT, we want BTC.
-        # We approximate how much BTC we can get for our start_amount of USDT.
-        amount_to_buy_middle = start_amount / float(book1['asks'][0][0])
-        trade1 = calculate_execution_details(book1['asks'], amount_to_buy_middle, is_buy_side=True)
-        amount_of_middle = trade1['amount_filled'] * (1 - fee)
+        p1, p2, p3 = pairs # e.g., ('BTC/USDT', 'ETH/BTC', 'ETH/USDT')
+        book1, book2, book3 = books[p1], books[p2], books[p3]
+        
+        base_currency, middle_currency = p1.split('/') # BTC, USDT
+        quote_currency, _ = p3.split('/') # ETH, USDT
 
-        # Step 2: Sell Middle for Quote (e.g., Sell BTC for ETH)
-        # Trade on ETH/BTC bids. We have BTC, we want ETH.
-        trade2 = calculate_execution_details(book2['bids'], amount_of_middle, is_buy_side=False)
-        amount_of_quote = trade2['cost_or_revenue'] * (1 - fee)
+        # --- Path 1: Start -> Middle -> Quote -> Start (e.g., USDT -> BTC -> ETH -> USDT) ---
+        # 1. Buy BTC with USDT (on BTC/USDT asks)
+        amount_of_middle = calculate_trade_outcome(book1['asks'], start_amount, fee, 'quote_to_base')
+        if amount_of_middle > 0:
+            # 2. Sell BTC for ETH (on ETH/BTC bids)
+            amount_of_quote = calculate_trade_outcome(book2['bids'], amount_of_middle, fee, 'base_to_quote')
+            if amount_of_quote > 0:
+                # 3. Sell ETH for USDT (on ETH/USDT bids)
+                final_amount = calculate_trade_outcome(book3['bids'], amount_of_quote, fee, 'base_to_quote')
+                
+                if final_amount > 0:
+                    profit_pct = (final_amount / start_amount) - 1
+                    if profit_pct > -0.01: # Log near misses
+                        return {
+                            'path': f"{base_currency}->{middle_currency}->{quote_currency}->{base_currency}",
+                            'profit_pct': profit_pct,
+                        }
 
-        # Step 3: Sell Quote for Base (e.g., Sell ETH for USDT)
-        # Trade on ETH/USDT bids. We have ETH, we want USDT.
-        trade3 = calculate_execution_details(book3['bids'], amount_of_quote, is_buy_side=False)
-        final_amount = trade3['cost_or_revenue'] * (1 - fee)
+        # --- Path 2: Start -> Quote -> Middle -> Start (e.g., USDT -> ETH -> BTC -> USDT) ---
+        # 1. Buy ETH with USDT (on ETH/USDT asks)
+        amount_of_quote = calculate_trade_outcome(book3['asks'], start_amount, fee, 'quote_to_base')
+        if amount_of_quote > 0:
+            # 2. Buy BTC with ETH (on ETH/BTC asks)
+            # This is tricky: we are spending ETH (quote) to buy BTC (base)
+            amount_of_middle = calculate_trade_outcome(book2['asks'], amount_of_quote, fee, 'quote_to_base')
+            if amount_of_middle > 0:
+                # 3. Sell BTC for USDT (on BTC/USDT bids)
+                final_amount = calculate_trade_outcome(book1['bids'], amount_of_middle, fee, 'base_to_quote')
 
-        profit_pct = (final_amount / start_amount) - 1
-        if profit_pct >= -0.01: # Log even small losses to see if we are close
-            return {
-                'path': f"{base_currency}->{middle_currency}->{quote_currency}->{base_currency}",
-                'profit_pct': profit_pct,
-                'final_amount': final_amount
-            }
+                if final_amount > 0:
+                    profit_pct = (final_amount / start_amount) - 1
+                    if profit_pct > -0.01: # Log near misses
+                        return {
+                            'path': f"{base_currency}->{quote_currency}->{middle_currency}->{base_currency}",
+                            'profit_pct': profit_pct,
+                        }
 
-    except (ValueError, KeyError, IndexError, ZeroDivisionError):
-        pass
-
-    # --- Path 2: Base -> Quote -> Middle -> Base (e.g., USDT -> ETH -> BTC -> USDT) ---
-    try:
-        # Step 1: Buy Quote with Base (e.g., Buy ETH with USDT)
-        # Trade on ETH/USDT asks. We have USDT, we want ETH.
-        amount_to_buy_quote = start_amount / float(book3['asks'][0][0])
-        trade1 = calculate_execution_details(book3['asks'], amount_to_buy_quote, is_buy_side=True)
-        amount_of_quote = trade1['amount_filled'] * (1 - fee)
-
-        # Step 2: Buy Middle with Quote (e.g., Buy BTC with ETH)
-        # Trade on ETH/BTC asks. We have ETH, we want BTC.
-        trade2 = calculate_execution_details(book2['asks'], amount_of_quote, is_buy_side=True)
-        amount_of_middle = trade2['amount_filled'] * (1 - fee)
-
-        # Step 3: Sell Middle for Base (e.g., Sell BTC for USDT)
-        # Trade on BTC/USDT bids. We have BTC, we want USDT.
-        trade3 = calculate_execution_details(book1['bids'], amount_of_middle, is_buy_side=False)
-        final_amount = trade3['cost_or_revenue'] * (1 - fee)
-
-        profit_pct = (final_amount / start_amount) - 1
-        if profit_pct >= -0.01: # Log even small losses to see if we are close
-            return {
-                'path': f"{base_currency}->{quote_currency}->{middle_currency}->{base_currency}",
-                'profit_pct': profit_pct,
-                'final_amount': final_amount
-            }
-
-    except (ValueError, KeyError, IndexError, ZeroDivisionError):
+    except (KeyError, IndexError, ZeroDivisionError) as e:
+        log.debug(f"Calculation error during triangular arbitrage check: {e}")
         pass
 
     return None
