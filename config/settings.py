@@ -21,7 +21,7 @@ EXCHANGE = "bybit"
 
 # Number of historical data points (candles) to use for calculating the rolling Z-score
 Z_SCORE_WINDOW = 200
-TIMEFRAME = "1h" # Must match the timeframe used in analysis
+TIMEFRAME = "60" # 1-hour candles. Must match the timeframe used in analysis
 
 # Strategy Parameters - Start with a standard baseline
 ENTRY_Z_SCORE = 2.0 # Enter when Z-score crosses this threshold
