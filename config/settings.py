@@ -1,4 +1,3 @@
-
 import os
 
 # --- API Key Configuration ---
@@ -13,19 +12,20 @@ API_KEYS = {
 
 # The pair to trade, identified in Phase 1
 PAIR = {
-    'symbol_1': 'ADA',
-    'symbol_2': 'LDO'
+    'symbol_1': 'DOT',
+    'symbol_2': 'PEPE'
 }
 
 # The exchange to trade on
 EXCHANGE = "bybit"
 
-# Number of historical data points to use for calculating the rolling Z-score
+# Number of historical data points (candles) to use for calculating the rolling Z-score
 Z_SCORE_WINDOW = 200
+TIMEFRAME = "1h" # Must match the timeframe used in analysis
 
-# Strategy Parameters - Tuned based on Phase 2 backtesting
-ENTRY_Z_SCORE = 1.0 # Enter when Z-score crosses this threshold
-EXIT_Z_SCORE = 0.0  # Exit when Z-score crosses back towards zero
+# Strategy Parameters - Start with a standard baseline
+ENTRY_Z_SCORE = 2.0 # Enter when Z-score crosses this threshold
+EXIT_Z_SCORE = 0.5  # Exit when Z-score crosses back towards zero
 STOP_LOSS_Z_SCORE = 3.0 # Exit if spread diverges too far
 
 # Financial Parameters
