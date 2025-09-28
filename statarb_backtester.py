@@ -14,7 +14,7 @@ from utils.logger import log
 # --- Configuration ---
 # The pair to backtest
 SYMBOL_1 = 'DOT'
-SYMBOL_2 = 'PEPE'
+SYMBOL_2 = 'DOGE'
 
 # --- HYPERPARAMETERS ---
 # Data & Model
