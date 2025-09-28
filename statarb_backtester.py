@@ -1,4 +1,3 @@
-
 import sys
 import os
 import pandas as pd
@@ -22,7 +21,11 @@ ENTRY_Z_SCORE = 2.0
 EXIT_Z_SCORE = 0.5
 STOP_LOSS_Z_SCORE = 3.0
 
-# --- Backtester --- 
+# Financial Parameters
+TRADE_CAPITAL_USD = 1000.0 # Capital allocated per trade
+FEES_PER_TRADE_LEG = 0.001 # 0.1% fee per leg (buy or sell)
+
+# --- Backtester ---
 
 def run_backtest():
     """Runs a backtest for the given pair and strategy parameters."""
@@ -43,7 +46,7 @@ def run_backtest():
     y = df[SYMBOL_1]
     x = sm.add_constant(df[SYMBOL_2])
     model = sm.OLS(y, x).fit()
-    hedge_ratio = model.params[1]
+    hedge_ratio = model.params.iloc[1] # Fix for FutureWarning
     df['spread'] = df[SYMBOL_1] - hedge_ratio * df[SYMBOL_2]
     df['z_score'] = (df['spread'] - df['spread'].mean()) / df['spread'].std()
 
@@ -52,8 +55,10 @@ def run_backtest():
     # 3. Run Trading Simulation
     position = 0 # 0: flat, 1: long spread (long S1, short S2), -1: short spread (short S1, long S2)
     trades = []
-    current_pnl = 0
-    total_pnl = 0
+    
+    # Track capital for equity curve
+    capital_history = [TRADE_CAPITAL_USD]
+    current_capital = TRADE_CAPITAL_USD
 
     for i in range(1, len(df)):
         prev_z = df['z_score'].iloc[i-1]
@@ -61,43 +66,83 @@ def run_backtest():
 
         # Entry Logic
         if position == 0:
-            if prev_z < -ENTRY_Z_SCORE and curr_z >= -ENTRY_Z_SCORE:
-                position = 1 # Long the spread
+            if prev_z < -ENTRY_Z_SCORE and curr_z >= -ENTRY_Z_SCORE: # Long the spread
+                position = 1 
                 entry_price_s1 = df[SYMBOL_1].iloc[i]
                 entry_price_s2 = df[SYMBOL_2].iloc[i]
-                trades.append({'type': 'long', 'entry_date': df.index[i], 'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2})
+                
+                # Calculate quantities based on half capital for each leg
+                qty_s1 = (current_capital / 2) / entry_price_s1
+                qty_s2 = ((current_capital / 2) / entry_price_s2) * hedge_ratio # Hedged quantity
+
+                trades.append({'type': 'long', 'entry_date': df.index[i], 
+                               'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2,
+                               'qty_s1': qty_s1, 'qty_s2': qty_s2})
                 log.info(f"{df.index[i].date()}: ENTER LONG SPREAD (Long {SYMBOL_1}, Short {SYMBOL_2}) at Z-Score {curr_z:.2f}")
-            elif prev_z > ENTRY_Z_SCORE and curr_z <= ENTRY_Z_SCORE:
-                position = -1 # Short the spread
+            elif prev_z > ENTRY_Z_SCORE and curr_z <= ENTRY_Z_SCORE: # Short the spread
+                position = -1 
                 entry_price_s1 = df[SYMBOL_1].iloc[i]
                 entry_price_s2 = df[SYMBOL_2].iloc[i]
-                trades.append({'type': 'short', 'entry_date': df.index[i], 'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2})
+
+                # Calculate quantities based on half capital for each leg
+                qty_s1 = (current_capital / 2) / entry_price_s1
+                qty_s2 = ((current_capital / 2) / entry_price_s2) * hedge_ratio # Hedged quantity
+
+                trades.append({'type': 'short', 'entry_date': df.index[i], 
+                               'entry_price_s1': entry_price_s1, 'entry_price_s2': entry_price_s2,
+                               'qty_s1': qty_s1, 'qty_s2': qty_s2})
                 log.info(f"{df.index[i].date()}: ENTER SHORT SPREAD (Short {SYMBOL_1}, Long {SYMBOL_2}) at Z-Score {curr_z:.2f}")
         
         # Exit & Stop-Loss Logic
         elif position == 1: # Currently long the spread
-            pnl_s1 = df[SYMBOL_1].iloc[i] - entry_price_s1
-            pnl_s2 = -(df[SYMBOL_2].iloc[i] - entry_price_s2) * hedge_ratio
-            current_pnl = pnl_s1 + pnl_s2
+            # Calculate PnL in USD
+            exit_price_s1 = df[SYMBOL_1].iloc[i]
+            exit_price_s2 = df[SYMBOL_2].iloc[i]
+            qty_s1 = trades[-1]['qty_s1']
+            qty_s2 = trades[-1]['qty_s2']
+
+            pnl_s1_usd = (exit_price_s1 - trades[-1]['entry_price_s1']) * qty_s1
+            pnl_s2_usd = (trades[-1]['entry_price_s2'] - exit_price_s2) * qty_s2 # Short position PnL
+            
+            # Subtract fees for both entry and exit legs (4 fees total)
+            fees_usd = (qty_s1 * trades[-1]['entry_price_s1'] * FEES_PER_TRADE_LEG) + \
+                       (qty_s2 * trades[-1]['entry_price_s2'] * FEES_PER_TRADE_LEG) + \
+                       (qty_s1 * exit_price_s1 * FEES_PER_TRADE_LEG) + \
+                       (qty_s2 * exit_price_s2 * FEES_PER_TRADE_LEG)
+
+            trade_pnl = pnl_s1_usd + pnl_s2_usd - fees_usd
 
             if curr_z >= -EXIT_Z_SCORE or curr_z < -STOP_LOSS_Z_SCORE:
-                log.info(f"{df.index[i].date()}: EXIT LONG SPREAD at Z-Score {curr_z:.2f}, PnL: {current_pnl:.4f}")
-                total_pnl += current_pnl
-                trades[-1].update({'exit_date': df.index[i], 'pnl': current_pnl})
+                current_capital += trade_pnl
+                log.info(f"{df.index[i].date()}: EXIT LONG SPREAD at Z-Score {curr_z:.2f}, PnL: {trade_pnl:.4f} USD. New Capital: {current_capital:.4f}")
+                trades[-1].update({'exit_date': df.index[i], 'pnl': trade_pnl, 'exit_price_s1': exit_price_s1, 'exit_price_s2': exit_price_s2})
                 position = 0
-                current_pnl = 0
 
         elif position == -1: # Currently short the spread
-            pnl_s1 = -(df[SYMBOL_1].iloc[i] - entry_price_s1)
-            pnl_s2 = (df[SYMBOL_2].iloc[i] - entry_price_s2) * hedge_ratio
-            current_pnl = pnl_s1 + pnl_s2
+            # Calculate PnL in USD
+            exit_price_s1 = df[SYMBOL_1].iloc[i]
+            exit_price_s2 = df[SYMBOL_2].iloc[i]
+            qty_s1 = trades[-1]['qty_s1']
+            qty_s2 = trades[-1]['qty_s2']
+
+            pnl_s1_usd = (trades[-1]['entry_price_s1'] - exit_price_s1) * qty_s1 # Short position PnL
+            pnl_s2_usd = (exit_price_s2 - trades[-1]['entry_price_s2']) * qty_s2
+
+            # Subtract fees for both entry and exit legs (4 fees total)
+            fees_usd = (qty_s1 * trades[-1]['entry_price_s1'] * FEES_PER_TRADE_LEG) + \
+                       (qty_s2 * trades[-1]['entry_price_s2'] * FEES_PER_TRADE_LEG) + \
+                       (qty_s1 * exit_price_s1 * FEES_PER_TRADE_LEG) + \
+                       (qty_s2 * exit_price_s2 * FEES_PER_TRADE_LEG)
+
+            trade_pnl = pnl_s1_usd + pnl_s2_usd - fees_usd
 
             if curr_z <= EXIT_Z_SCORE or curr_z > STOP_LOSS_Z_SCORE:
-                log.info(f"{df.index[i].date()}: EXIT SHORT SPREAD at Z-Score {curr_z:.2f}, PnL: {current_pnl:.4f}")
-                total_pnl += current_pnl
-                trades[-1].update({'exit_date': df.index[i], 'pnl': current_pnl})
+                current_capital += trade_pnl
+                log.info(f"{df.index[i].date()}: EXIT SHORT SPREAD at Z-Score {curr_z:.2f}, PnL: {trade_pnl:.4f} USD. New Capital: {current_capital:.4f}")
+                trades[-1].update({'exit_date': df.index[i], 'pnl': trade_pnl, 'exit_price_s1': exit_price_s1, 'exit_price_s2': exit_price_s2})
                 position = 0
-                current_pnl = 0
+        
+        capital_history.append(current_capital)
 
     # 4. Report Performance
     log.info("--- Backtest Performance Report ---")
@@ -109,11 +154,12 @@ def run_backtest():
     wins = trade_df[trade_df['pnl'] > 0]
     losses = trade_df[trade_df['pnl'] <= 0]
 
-    log.info(f"Total Net PnL: {trade_df['pnl'].sum():.4f}")
+    log.info(f"Final Capital: {current_capital:.4f} USD")
+    log.info(f"Total Net PnL: {trade_df['pnl'].sum():.4f} USD")
     log.info(f"Total Trades: {len(trade_df)}")
     log.info(f"Win Rate: {len(wins) / len(trade_df) * 100:.2f}%" if len(trade_df) > 0 else "Win Rate: 0.00%")
-    log.info(f"Average Win: {wins['pnl'].mean():.4f}" if len(wins) > 0 else "Average Win: 0.0000")
-    log.info(f"Average Loss: {losses['pnl'].mean():.4f}" if len(losses) > 0 else "Average Loss: 0.0000")
+    log.info(f"Average Win: {wins['pnl'].mean():.4f} USD" if len(wins) > 0 else "Average Win: 0.0000 USD")
+    log.info(f"Average Loss: {losses['pnl'].mean():.4f} USD" if len(losses) > 0 else "Average Loss: 0.0000 USD")
     log.info(f"Profit Factor: {abs(wins['pnl'].sum() / losses['pnl'].sum()):.2f}" if len(losses) > 0 and losses['pnl'].sum() != 0 else "Profit Factor: inf")
 
     # 5. Plotting
@@ -124,6 +170,7 @@ def run_backtest():
     ax1.axhline(EXIT_Z_SCORE, color='orange', linestyle=':')
     ax1.axhline(-EXIT_Z_SCORE, color='orange', linestyle=':')
     ax1.set_title(f'{SYMBOL_1}-{SYMBOL_2} Z-Score')
+    ax1.autoscale(enable=True, axis='x', tight=True) # Fix UserWarning
 
     # Plot trades
     for trade in trades:
@@ -135,13 +182,13 @@ def run_backtest():
             if 'exit_date' in trade: ax1.axvline(trade['exit_date'], color='black', linestyle='-', alpha=0.5)
 
     # Plot equity curve
-    trade_df['cumulative_pnl'] = trade_df['pnl'].cumsum()
-    trade_df.set_index('exit_date', inplace=True)
-    trade_df['cumulative_pnl'].plot(ax=ax2, label='Equity Curve')
+    pd.Series(capital_history, index=df.index).plot(ax=ax2, label='Equity Curve', color='blue')
     ax2.set_title('Portfolio Equity Curve')
-    ax2.set_ylabel('PnL')
+    ax2.set_ylabel('Capital (USD)')
+    ax2.autoscale(enable=True, axis='x', tight=True) # Fix UserWarning
 
     plt.tight_layout()
+    fig.autofmt_xdate() # Fix UserWarning
     plot_filename = f'analysis/backtest_report_{SYMBOL_1}-{SYMBOL_2}.png'
     plt.savefig(plot_filename)
     log.info(f"Backtest report plot saved to {plot_filename}")
