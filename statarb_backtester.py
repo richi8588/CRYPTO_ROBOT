@@ -13,8 +13,8 @@ from utils.logger import log
 
 # --- Configuration ---
 # The pair to backtest
-SYMBOL_1 = 'LDO'
-SYMBOL_2 = 'LTC'
+SYMBOL_1 = 'DOGE'
+SYMBOL_2 = 'LINK'
 
 # --- HYPERPARAMETERS ---
 # Data & Model
@@ -26,7 +26,7 @@ USE_LOG_SPREAD = True # Use log(s1) - ratio * log(s2)
 # Strategy Entry/Exit
 # Using static Z-score for simplicity, adaptive thresholds can be complex to tune
 ENTRY_Z_SCORE = 2.0
-EXIT_Z_SCORE = 0.2
+EXIT_Z_SCORE = 0.5
 
 # Risk Management
 USE_RISK_BASED_SIZING = True
