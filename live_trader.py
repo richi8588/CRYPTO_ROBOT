@@ -37,42 +37,48 @@ class StrategyManager:
         self.api_session = HTTP()
 
     def get_historical_prices(self, symbol):
+        log.info(f"Fetching {self.window} candles of {self.timeframe} data for {symbol}...")
+        
+        # --- Attempt 1: Primary Symbol (e.g., 1000PEPEUSDT) ---
+        symbol_to_fetch = f"{symbol}USDT"
+        if symbol in ['PEPE', 'SHIB']: # Add other special tickers here if needed
+            symbol_to_fetch = f"1000{symbol}USDT"
+        
         try:
-            log.info(f"Fetching {self.window} candles of {self.timeframe} data for {symbol}...")
-            
-            # Try primary symbol first (e.g., 1000PEPEUSDT)
-            symbol_to_fetch = f"{symbol}USDT"
-            if symbol == 'PEPE': symbol_to_fetch = '1000PEPEUSDT'
-            if symbol == 'SHIB': symbol_to_fetch = '1000SHIBUSDT'
-
             response = self.api_session.get_kline(
                 category="spot", symbol=symbol_to_fetch, interval=self.timeframe, limit=self.window)
-
-            # Fallback for pairs like PEPE/SHIB if the 1000... convention fails
-            if response['retCode'] != 0 and (symbol == 'PEPE' or symbol == 'SHIB'):
-                log.warning(f"Could not fetch {symbol_to_fetch}, trying base {symbol}USDT...")
-                symbol_to_fetch = f"{symbol}USDT"
-                response = self.api_session.get_kline(
-                    category="spot", symbol=symbol_to_fetch, interval=self.timeframe, limit=self.window)
-
             if response['retCode'] == 0 and response['result']['list']:
                 data = response['result']['list']
                 df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
                 df.set_index('timestamp', inplace=True)
                 df['close'] = df['close'].astype(float)
-                
-                # Adjust price for special tickers
                 if '1000' in symbol_to_fetch:
                     df['close'] = df['close'] / 1000
-
                 return df.iloc[::-1]['close']
-            
-            log.error(f"Could not fetch data for {symbol}: {response['retMsg']}")
-            return None
         except Exception as e:
-            log.error(f"An error occurred while fetching historical data for {symbol}: {e}")
-            return None
+            log.warning(f"Attempt 1 failed for {symbol_to_fetch}: {e}")
+
+        # --- Attempt 2: Fallback Symbol (e.g., PEPEUSDT) ---
+        if symbol in ['PEPE', 'SHIB']:
+            log.info(f"Falling back to base symbol for {symbol}...")
+            symbol_to_fetch = f"{symbol}USDT"
+            try:
+                response = self.api_session.get_kline(
+                    category="spot", symbol=symbol_to_fetch, interval=self.timeframe, limit=self.window)
+                if response['retCode'] == 0 and response['result']['list']:
+                    data = response['result']['list']
+                    df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
+                    df.set_index('timestamp', inplace=True)
+                    df['close'] = df['close'].astype(float)
+                    return df.iloc[::-1]['close']
+            except Exception as e:
+                log.error(f"Attempt 2 also failed for {symbol_to_fetch}: {e}")
+                return None
+
+        log.error(f"Could not fetch data for {symbol} after all attempts.")
+        return None
 
     def initialize(self):
         log.info("Initializing Strategy Manager with historical data...")
