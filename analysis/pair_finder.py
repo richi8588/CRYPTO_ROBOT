@@ -122,15 +122,21 @@ def find_cointegrated_pairs(symbols):
         log.error("No pairs could be tested. Exiting.")
         return None
 
-    # Find the pair with the lowest p-value
-    best_pair_result = min(cointegration_results, key=lambda x: x['p_value'])
+    # Sort results by p-value
+    sorted_results = sorted(cointegration_results, key=lambda x: x['p_value'])
     
-    log.info("--- Cointegration Test Results ---")
+    log.info("--- Top 10 Cointegration Test Results ---")
+    top_10 = sorted_results[:10]
+    for i, result in enumerate(top_10):
+        log.info(f"  {i+1:2d}. Pair: {result['pair']:<15} P-value: {result['p_value']:.4f}")
+
+    # Check if the best pair meets the threshold
+    best_pair_result = top_10[0]
     if best_pair_result['p_value'] < P_VALUE_THRESHOLD:
-        log.info(f"Best cointegrated pair found: {best_pair_result['pair']} with p-value {best_pair_result['p_value']:.4f}")
+        log.info(f"Best cointegrated pair found: {best_pair_result['pair']} (p-value < {P_VALUE_THRESHOLD})")
         return best_pair_result['pair']
     else:
-        log.warning(f"No significantly cointegrated pair found. The best pair was {best_pair_result['pair']} with p-value {best_pair_result['p_value']:.4f}, which is above the threshold of {P_VALUE_THRESHOLD}.")
+        log.warning(f"No significantly cointegrated pair found. The best pair was {best_pair_result['pair']} with p-value {best_pair_result['p_value']:.4f}.")
         return None
 
 def analyze_and_plot_pair(pair_string):
