@@ -25,7 +25,7 @@ USE_LOG_SPREAD = True # Use log(s1) - ratio * log(s2)
 
 # Strategy Entry/Exit
 # Using static Z-score for simplicity, adaptive thresholds can be complex to tune
-ENTRY_Z_SCORE = 1.5
+ENTRY_Z_SCORE = 1.0
 EXIT_Z_SCORE = 0.5
 
 # Risk Management
