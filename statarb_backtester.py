@@ -11,37 +11,24 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from analysis.pair_finder import get_historical_prices # Reuse the data fetching function
 from utils.logger import log
 
-# --- Configuration ---
-# The pair to backtest
-SYMBOL_1 = 'ADA'
-SYMBOL_2 = 'BCH'
-
-# --- HYPERPARAMETERS ---
-# Data & Model
-TIMEFRAME = "60" # 1-hour candles
-HISTORY_LIMIT = 8760 # How many candles to fetch initially (1 year of hourly data)
-REGRESSION_WINDOW = 60 # Rolling window for OLS regression (e.g., last 60 hours)
-USE_LOG_SPREAD = True # Use log(s1) - ratio * log(s2)
-
-# Strategy Entry/Exit
-# Using static Z-score for simplicity, adaptive thresholds can be complex to tune
-ENTRY_Z_SCORE = 2.0
-EXIT_Z_SCORE = 0.5
-
-# Risk Management
-USE_RISK_BASED_SIZING = True
-MAX_HOLDING_PERIOD = 48 # Max number of candles (e.g., 48 hours)
-STOP_LOSS_Z_SCORE = 3.0
-SLIPPAGE_PERCENT = 0.0005 # 0.05% slippage per leg
-
-# Financials
-INITIAL_CAPITAL = 1000.0
-FEES_PER_TRADE_LEG = 0.001 # 0.1% fee
-
-# --- Backtester Engine ---
-
-def run_backtest():
+def run_backtest(params, plot=False):
     """Runs a backtest for the given pair and strategy parameters."""
+    
+    SYMBOL_1 = params['symbol_1']
+    SYMBOL_2 = params['symbol_2']
+    TIMEFRAME = params['timeframe']
+    HISTORY_LIMIT = params['history_limit']
+    REGRESSION_WINDOW = params['regression_window']
+    USE_LOG_SPREAD = params['use_log_spread']
+    ENTRY_Z_SCORE = params['entry_z_score']
+    EXIT_Z_SCORE = params['exit_z_score']
+    USE_RISK_BASED_SIZING = params['use_risk_based_sizing']
+    MAX_HOLDING_PERIOD = params['max_holding_period']
+    STOP_LOSS_Z_SCORE = params['stop_loss_z_score']
+    SLIPPAGE_PERCENT = params['slippage_percent']
+    INITIAL_CAPITAL = params['initial_capital']
+    FEES_PER_TRADE_LEG = params['fees_per_trade_leg']
+
     log.info(f"--- Starting Advanced Backtest for {SYMBOL_1}-{SYMBOL_2} ---")
 
     # 1. Load Data
@@ -49,7 +36,7 @@ def run_backtest():
     series2 = get_historical_prices(SYMBOL_2, TIMEFRAME, HISTORY_LIMIT)
     if series1 is None or series2 is None: 
         log.error("Could not load data for one or both symbols. Exiting backtest.")
-        return
+        return 0
 
     df = pd.DataFrame({SYMBOL_1: series1, SYMBOL_2: series2}).dropna()
 
@@ -148,38 +135,58 @@ def run_backtest():
     log.info("--- Advanced Backtest Performance Report ---")
     if not any('pnl' in t for t in trades):
         log.warning("No trades were completed during the backtest period.")
-        return
+        return 0
 
     trade_df = pd.DataFrame([t for t in trades if 'pnl' in t])
-    # ... (rest of the reporting and plotting code is the same)
     wins = trade_df[trade_df['pnl'] > 0]
     losses = trade_df[trade_df['pnl'] <= 0]
 
+    total_net_pnl = trade_df['pnl'].sum()
+
     log.info(f"Final Capital: {capital:.2f} USD")
-    log.info(f"Total Net PnL: {trade_df['pnl'].sum():.2f} USD")
+    log.info(f"Total Net PnL: {total_net_pnl:.2f} USD")
     log.info(f"Total Trades: {len(trade_df)}")
     log.info(f"Win Rate: {len(wins) / len(trade_df) * 100:.2f}%" if len(trade_df) > 0 else "0.00%")
     log.info(f"Average Win: {wins['pnl'].mean():.2f} USD" if len(wins) > 0 else "0.00")
     log.info(f"Average Loss: {losses['pnl'].mean():.2f} USD" if len(losses) > 0 else "0.00")
     log.info(f"Profit Factor: {abs(wins['pnl'].sum() / losses['pnl'].sum()):.2f}" if len(losses) > 0 and losses['pnl'].sum() != 0 else "inf")
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
-    df['z_score'].plot(ax=ax1, label='Z-Score')
-    ax1.set_title(f'{SYMBOL_1}-{SYMBOL_2} Z-Score and Trades')
-    for trade in trade_df.itertuples():
-        color = 'green' if trade.pnl > 0 else 'red'
-        ax1.axvline(trade.entry_date, color=color, linestyle='--', alpha=0.7)
-        ax1.axvline(trade.exit_date, color='black', linestyle=':', alpha=0.7)
-    
-    equity_df = pd.Series(equity_curve, index=df.index[REGRESSION_WINDOW:])
-    equity_df.plot(ax=ax2, label='Equity Curve')
-    ax2.set_title('Portfolio Equity Curve')
-    ax2.set_ylabel('Capital (USD)')
+    if plot:
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), sharex=True, gridspec_kw={'height_ratios': [2, 1]})
+        df['z_score'].plot(ax=ax1, label='Z-Score')
+        ax1.set_title(f'{SYMBOL_1}-{SYMBOL_2} Z-Score and Trades')
+        for trade in trade_df.itertuples():
+            color = 'green' if trade.pnl > 0 else 'red'
+            ax1.axvline(trade.entry_date, color=color, linestyle='--', alpha=0.7)
+            ax1.axvline(trade.exit_date, color='black', linestyle=':', alpha=0.7)
+        
+        equity_df = pd.Series(equity_curve, index=df.index[REGRESSION_WINDOW:])
+        equity_df.plot(ax=ax2, label='Equity Curve')
+        ax2.set_title('Portfolio Equity Curve')
+        ax2.set_ylabel('Capital (USD)')
 
-    plt.tight_layout()
-    plot_filename = f'analysis/advanced_backtest_report_{SYMBOL_1}-{SYMBOL_2}.png'
-    plt.savefig(plot_filename)
-    log.info(f"Backtest report plot saved to {plot_filename}")
+        plt.tight_layout()
+        plot_filename = f'analysis/advanced_backtest_report_{SYMBOL_1}-{SYMBOL_2}.png'
+        plt.savefig(plot_filename)
+        log.info(f"Backtest report plot saved to {plot_filename}")
+
+    return total_net_pnl
 
 if __name__ == "__main__":
-    run_backtest()
+    default_params = {
+        'symbol_1': 'DOT',
+        'symbol_2': 'DOGE',
+        'timeframe': "60",
+        'history_limit': 8760,
+        'regression_window': 79,
+        'use_log_spread': True,
+        'entry_z_score': 1.9827451877131854,
+        'exit_z_score': -0.14951875191643782,
+        'use_risk_based_sizing': True,
+        'max_holding_period': 88,
+        'stop_loss_z_score': 3.3309970130195627,
+        'slippage_percent': 0.0005,
+        'initial_capital': 1000.0,
+        'fees_per_trade_leg': 0.001
+    }
+    run_backtest(default_params, plot=True)

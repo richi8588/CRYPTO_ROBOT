@@ -5,3 +5,4 @@ numpy
 pybit
 statsmodels
 matplotlib
+deap
