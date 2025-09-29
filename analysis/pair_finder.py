@@ -82,10 +82,11 @@ def get_historical_prices(symbol, interval, total_limit):
     df['timestamp'] = pd.to_datetime(df['timestamp'].astype(int), unit='ms')
     df.drop_duplicates(subset=['timestamp'], inplace=True)
     df.set_index('timestamp', inplace=True)
-    df['close'] = df['close'].astype(float)
+    df = df.astype(float)
     if '1000' in params['symbol']:
-        df['close'] = df['close'] / 1000
-    return df.iloc[::-1]['close']
+        df /= 1000
+
+    return df.iloc[::-1]
 
 def find_cointegrated_pairs(symbols):
     """Tests all pairs of symbols for cointegration and returns the best one."""
@@ -96,22 +97,22 @@ def find_cointegrated_pairs(symbols):
     for pair in pairs:
         symbol1, symbol2 = pair
         
-        series1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
-        series2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
+        df1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
+        df2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
 
-        if series1 is None or series2 is None or len(series1) < (LIMIT * 0.9) or len(series2) < (LIMIT * 0.9):
+        if df1 is None or df2 is None or len(df1) < (LIMIT * 0.9) or len(df2) < (LIMIT * 0.9):
             log.warning(f"Skipping pair {symbol1}-{symbol2} due to insufficient or mismatched data.")
             continue
 
         # Ensure dataframes are aligned by timestamp
-        aligned_series1, aligned_series2 = series1.align(series2, join='inner')
+        aligned_df1, aligned_df2 = df1.align(df2, join='inner')
 
-        if len(aligned_series1) < (LIMIT * 0.9):
+        if len(aligned_df1) < (LIMIT * 0.9):
             log.warning(f"Skipping pair {symbol1}-{symbol2} due to insufficient aligned data.")
             continue
 
         # Perform the Engle-Granger cointegration test
-        score, p_value, _ = coint(aligned_series1, aligned_series2)
+        score, p_value, _ = coint(aligned_df1['close'], aligned_df2['close'])
         cointegration_results.append({
             'pair': f"{symbol1}-{symbol2}",
             'p_value': p_value
@@ -144,14 +145,17 @@ def analyze_and_plot_pair(pair_string):
     log.info(f"--- Analyzing Best Pair: {pair_string} ---")
     symbol1, symbol2 = pair_string.split('-')
 
-    series1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
-    series2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
+    df1 = get_historical_prices(symbol1, TIMEFRAME, LIMIT)
+    df2 = get_historical_prices(symbol2, TIMEFRAME, LIMIT)
 
-    if series1 is None or series2 is None:
+    if df1 is None or df2 is None:
         return
     
     # Align data before analysis
-    series1, series2 = series1.align(series2, join='inner')
+    df1, df2 = df1.align(df2, join='inner')
+
+    series1 = df1['close']
+    series2 = df2['close']
 
     # 1. Calculate spread using linear regression (OLS)
     y = series1

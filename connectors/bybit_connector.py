@@ -1,9 +1,9 @@
-
 import asyncio
 import time
 import json
 import websockets
 from pybit.unified_trading import HTTP
+from decimal import Decimal
 
 from config.settings import API_KEYS
 from utils.logger import log
@@ -40,6 +40,70 @@ class BybitConnector:
         except Exception as e:
             log.error(f"An exception occurred while fetching Bybit balance: {e}")
             return None
+
+    def get_symbol_info(self, pair: str):
+        """Fetches symbol information for a given pair."""
+        try:
+            result = self.session.get_instruments_info(
+                category="spot",
+                symbol=pair.replace('-', '')
+            )
+            if result and result.get('retCode') == 0:
+                return result['result']['list'][0]
+            else:
+                log.error(f"Error fetching symbol info for {pair}: {result.get('retMsg')}")
+                return None
+        except Exception as e:
+            log.error(f"An exception occurred while fetching symbol info for {pair}: {e}")
+            return None
+
+    def get_order_book(self, pair: str):
+        """Fetches the order book for a given pair."""
+        try:
+            result = self.session.get_orderbook(
+                category="spot",
+                symbol=pair.replace('-', '')
+            )
+            if result and result.get('retCode') == 0:
+                return result['result']
+            else:
+                log.error(f"Error fetching order book for {pair}: {result.get('retMsg')}")
+                return None
+        except Exception as e:
+            log.error(f"An exception occurred while fetching order book for {pair}: {e}")
+            return None
+
+    def place_order(self, pair: str, side: str, size: float, price: Decimal):
+        """Places a limit order."""
+        try:
+            result = self.session.place_order(
+                category="spot",
+                symbol=pair.replace('-', ''),
+                side=side.capitalize(),
+                orderType="Limit",
+                qty=str(size),
+                price=str(price),
+            )
+            if result and result.get('retCode') == 0:
+                log.info(f"Placed {side} order for {size} of {pair} at {price:.4f}")
+            else:
+                log.error(f"Error placing order for {pair}: {result.get('retMsg')}")
+        except Exception as e:
+            log.error(f"An exception occurred while placing order for {pair}: {e}")
+
+    def cancel_all_orders(self, pair: str):
+        """Cancels all open orders for a given pair."""
+        try:
+            result = self.session.cancel_all_orders(
+                category="spot",
+                symbol=pair.replace('-', '')
+            )
+            if result and result.get('retCode') == 0:
+                log.info(f"Cancelled all orders for {pair}")
+            else:
+                log.error(f"Error cancelling orders for {pair}: {result.get('retMsg')}")
+        except Exception as e:
+            log.error(f"An exception occurred while cancelling orders for {pair}: {e}")
 
     async def start_public_stream(self, pairs: list, callback, stream_type="orderbook"):
         """Connects to Bybit, subscribes to pairs, and calls callback with messages."""

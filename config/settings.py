@@ -33,3 +33,9 @@ TRADE_CAPITAL_USD = 1000.0 # Total capital to use for the strategy
 
 # Exchange Fee Configuration
 TAKER_FEE = 0.001  # 0.1% fee per leg (buy or sell)
+
+# --- Market Maker Strategy Settings ---
+MARKET_MAKER_PAIR = 'BTC-USDT'
+MARKET_MAKER_SPREAD = 0.005983751863027161 # The desired spread (0.6%)
+MARKET_MAKER_ORDER_SIZE = 0.01 # The size of the buy and sell orders
+MARKET_MAKER_INVENTORY_LIMIT = 0.1 # The maximum inventory of the base asset to hold

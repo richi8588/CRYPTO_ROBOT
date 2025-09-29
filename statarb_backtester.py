@@ -32,13 +32,13 @@ def run_backtest(params, plot=False):
     log.info(f"--- Starting Advanced Backtest for {SYMBOL_1}-{SYMBOL_2} ---")
 
     # 1. Load Data
-    series1 = get_historical_prices(SYMBOL_1, TIMEFRAME, HISTORY_LIMIT)
-    series2 = get_historical_prices(SYMBOL_2, TIMEFRAME, HISTORY_LIMIT)
-    if series1 is None or series2 is None: 
+    df1 = get_historical_prices(SYMBOL_1, TIMEFRAME, HISTORY_LIMIT)
+    df2 = get_historical_prices(SYMBOL_2, TIMEFRAME, HISTORY_LIMIT)
+    if df1 is None or df2 is None: 
         log.error("Could not load data for one or both symbols. Exiting backtest.")
         return 0
 
-    df = pd.DataFrame({SYMBOL_1: series1, SYMBOL_2: series2}).dropna()
+    df = pd.DataFrame({SYMBOL_1: df1['close'], SYMBOL_2: df2['close']}).dropna()
 
     # 2. Initialize columns
     df['z_score'] = np.nan
