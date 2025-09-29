@@ -75,9 +75,9 @@ class BybitConnector:
                                 for trade_data in data['data']:
                                     # Re-wrap it to look like a single message for the handler
                                     single_trade_message = {'topic': data['topic'], 'data': [trade_data]}
-                                    await callback('bybit', single_trade_message)
+                                    await callback(single_trade_message)
                             else:
-                                await callback('bybit', data)
+                                await callback(data)
             except websockets.exceptions.ConnectionClosed as e:
                 log.warning(f"Bybit connection closed: {e}. Reconnecting in 5 seconds...")
                 await asyncio.sleep(5)
